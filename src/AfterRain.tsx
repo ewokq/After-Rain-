@@ -4,6 +4,9 @@ type Ctx = CanvasRenderingContext2D;
 let W = 320;
 const H = 180;
 const FEET = 160;
+let YO = 0;
+let SIL: HTMLCanvasElement | null = null;
+const BLOOM = { n: 2, a0: 0.7, a1: 0.55 };
 type LocId = "apt" | "district" | "market";
 const LOCW: Record<LocId, number> = { apt: 360, district: 1400, market: 900 };
 const FW = Math.ceil(340 + 1400 * 0.15);
@@ -164,7 +167,7 @@ function bakeBokeh(c: Ctx, lights: BL[], seed: number): void {
   for (let i = 0; i < Math.floor(span / 28); i++) all.push([h1(seed + i * 3.7) * span, BPOOL[i % BPOOL.length] ?? "255,176,74"]);
   c.save(); c.globalCompositeOperation = "lighter";
   all.forEach((l: BL, i: number) => {
-    const r = 3 + h1(seed + i * 1.7) * 6; const px = l[0] * 1.3 - 30 + (h1(seed + i * 9.1) - 0.5) * 24; const py = 12 + h1(seed + i * 5.3) * 12;
+    const hh = c.canvas.height; const r = (3 + h1(seed + i * 1.7) * 6) * Math.sqrt(hh / 28); const px = l[0] * 1.3 - 30 + (h1(seed + i * 9.1) - 0.5) * 24; const py = hh * 0.43 + (h1(seed + i * 5.3) - 0.5) * hh * 0.5;
     c.globalAlpha = 0.35 + h1(seed + i * 2.9) * 0.5; c.drawImage(disc(l[1]), px - r, py - r, r * 2, r * 2);
   });
   c.restore();
@@ -268,13 +271,29 @@ function drawFg(f: Ctx, cc: Caches): void {
   f.setTransform(1, 0, 0, 1, 0, 0); f.globalAlpha = 1; f.globalCompositeOperation = "source-over";
   f.clearRect(0, 0, W, H);
   const top = L === "district" ? cc.topD : L === "market" ? cc.topM : null;
-  if (top) f.drawImage(top, Math.round(cam * 1.2), 0, W, 48, 0, 0, W, 48);
+  if (top) f.drawImage(top, Math.round(cam * 1.2), 0, W, top.height, 0, 0, W, top.height);
+  if (!SIL) { SIL = document.createElement("canvas"); SIL.width = 100; SIL.height = 45; }
+  const sc = SIL.getContext("2d");
+  if (sc) {
+    sc.setTransform(1, 0, 0, 1, 0, 0); sc.clearRect(0, 0, 100, 45); let any = false;
+    for (const p of g.peds) {
+      if (p.loc !== L || p.lane !== 2 || (!g.gfx && p.half)) continue;
+      const span = W + 160; const sx = ((((p.x - cam) * 1.6) % span) + span) % span - 80;
+      if (sx < -40 || sx > W + 40) continue; any = true;
+      sc.save(); sc.translate(sx / 4, 47); sc.scale(0.6, 0.6);
+      drawPerson(sc, 0, 0, p.look, p.dir, g.t * 5 + p.seed, true);
+      if (p.kind === "umb") umbrella(sc, p.dir, -p.look.h + 3, 8, "#030507", "");
+      sc.restore();
+    }
+    if (any) { f.save(); f.imageSmoothingEnabled = true; f.globalAlpha = 0.82; f.drawImage(SIL, 0, 0, 100, 45, 0, 0, 400, 180); f.restore(); }
+  }
   if (!g.gfx) return;
-  const gr = f.createLinearGradient(0, 164, 0, H); gr.addColorStop(0, "rgba(2,6,8,0)"); gr.addColorStop(1, "rgba(2,6,8,0.7)");
-  f.fillStyle = gr; f.fillRect(0, 164, W, H - 164);
-  const bk = L === "district" ? cc.bokD : L === "market" ? cc.bokM : cc.bokA;
+  const bk = L === "district" ? cc.bokD : L === "market" ? cc.bokM : cc.bokA; const bh = bk.height;
+  const gy = H - Math.round(bh * 0.6);
+  const gr = f.createLinearGradient(0, gy, 0, H); gr.addColorStop(0, "rgba(2,6,8,0)"); gr.addColorStop(1, "rgba(2,6,8,0.6)");
+  f.fillStyle = gr; f.fillRect(0, gy, W, H - gy);
   f.globalCompositeOperation = "lighter"; f.globalAlpha = L === "apt" ? 0.4 : 0.75 + Math.sin(g.t * 0.7) * 0.08;
-  f.drawImage(bk, Math.round(cam * 1.3), 0, W, 28, 0, H - 28, W, 28);
+  f.drawImage(bk, Math.round(cam * 1.3), 0, W, bh, 0, H - bh, W, bh);
   f.globalAlpha = 1; f.globalCompositeOperation = "source-over";
   if (L === "district") {
     f.fillStyle = "rgba(210,240,235,0.2)"; const span = W + 60;
@@ -545,6 +564,135 @@ type Panel = "none" | "pause" | "bag" | "journal" | "settings" | "credits";
 type Scene = "menu" | "cut" | "play" | "glitch" | "end";
 type Drop = { x: number; y: number; v: number; l: number; g: number };
 type Car = { x: number; y: number; speed: number; dir: number; layer: number };
+type Ped = { loc: LocId; x: number; lane: number; dir: number; sp: number; look: Look; look2: Look; kind: string; st: string; base: string; stT: number; seed: number; bubT: number; dy: number; gl: number; half: boolean };
+const PCOAT = ["#2a2f3a", "#3a2a2a", "#1e3a34", "#3a3428", "#2a2238", "#40302a", "#1c2a3a", "#4a2030", "#2c3a2a", "#1a1e26"];
+const PHAIR = ["#141012", "#3a2a1c", "#c8c0b0", "#6a2a3a", "#1a1a2a", "#2a1a10"];
+const PSKIN = ["#d6a88c", "#a87458", "#7a5040", "#e0c0a0", "#5a3a2a", "#c08a6a"];
+const PACC = ["#5ff0d8", "#ff6f9a", "#ffb04a", "#7ac8ff", "#c8ff6a", "#3a4450", "#5a3a4a"];
+const PRIM = ["#5ff0d8", "#ff6f9a", "#ffb04a", "#9a8cff"];
+const PEXTRA = ["", "", "", "glasses", "bag", "headset", "headband", "cap", "", "bag"];
+const PKINDS = ["coat", "umb", "neon", "hood", "umb", "kid", "couple", "worker", "rider", "dog", "synth", "coat", "hood", "neon", "coat", "umb"];
+const NEONS = ["#ff6f9a", "#5ff0d8", "#ffb04a", "#9a8cff"];
+const PSTOP: Record<LocId, [number, string][]> = { apt: [], district: [[183, "shop"], [399, "shop"], [677, "shop"], [959, "shop"], [96, "look"], [545, "look"], [721, "look"], [1110, "look"], [1258, "look"]], market: [[190, "shop"], [360, "shop"], [520, "shop"], [770, "shop"], [266, "look"], [864, "look"]] };
+function mixHex(a: string, b: string, k: number): string {
+  if (!/^#[0-9a-f]{6}$/i.test(a)) return a;
+  const p = (s: string, i: number): number => parseInt(s.slice(i, i + 2), 16);
+  const m = (i: number): string => Math.round(p(a, i) * (1 - k) + p(b, i) * k).toString(16).padStart(2, "0");
+  return "#" + m(1) + m(3) + m(5);
+}
+function pedLook(s: number, kind: string, lane: number): Look {
+  const pk = (a: string[], k: number): string => a[Math.floor(h1(s + k) * a.length)] ?? "#222222";
+  if (lane === 2) return { coat: "#020406", hair: "#020406", skin: "#05080a", accent: "#04070a", rim: h1(s + 5) > 0.5 ? "#2a5a5a" : "#5a3a2a", h: 19 + Math.floor(h1(s + 7) * 3), extra: "" };
+  const syn = kind === "synth";
+  const L: Look = { coat: kind === "worker" ? "#3a3a20" : pk(PCOAT, 1), hair: pk(PHAIR, 2), skin: syn ? "#e6dcd4" : pk(PSKIN, 3), accent: kind === "worker" ? "#d8c020" : pk(PACC, 4), rim: syn ? "#5ff0d8" : h1(s + 5) > 0.55 ? pk(PRIM, 6) : "", h: kind === "kid" ? 13 : 17 + Math.floor(h1(s + 7) * 5), extra: kind === "worker" ? "cap" : kind === "rider" ? "visor" : kind === "hood" || kind === "kid" ? "" : pk(PEXTRA, 8) };
+  if (kind === "hood") L.hair = L.coat;
+  if (lane === 0) { const hz = "#1e4a4a"; L.coat = mixHex(L.coat, hz, 0.45); L.hair = mixHex(L.hair, hz, 0.45); L.skin = mixHex(L.skin, hz, 0.5); L.accent = mixHex(L.accent, hz, 0.4); }
+  return L;
+}
+function pedKind(p: Ped, kind0: string): void {
+  const kind = p.loc === "market" && (kind0 === "umb" || kind0 === "rider") ? "coat" : kind0;
+  p.kind = kind; p.look = pedLook(p.seed, kind, p.lane); p.look2 = pedLook(p.seed + 50, "coat", p.lane);
+  p.sp = p.base !== "walk" ? 0 : p.lane === 2 ? 18 + h1(p.seed) * 14 : kind === "rider" ? 62 + h1(p.seed) * 26 : kind === "kid" ? 26 + h1(p.seed) * 14 : 11 + h1(p.seed + 1) * 20;
+}
+function mkPed(loc: LocId, x: number, lane: number, kind: string, st: string, seed: number, half: boolean): Ped {
+  const L = pedLook(seed, kind, lane);
+  const p: Ped = { loc, x, lane, dir: h1(seed + 9) > 0.5 ? 1 : -1, sp: 0, look: L, look2: L, kind, st, base: st, stT: 0, seed, bubT: h1(seed + 4) * 3, dy: 0, gl: 0, half };
+  pedKind(p, kind); return p;
+}
+function makePeds(): Ped[] {
+  const o: Ped[] = [];
+  const add = (loc: LocId, list: [number, number, string, string][], s0: number): void => list.forEach((d: [number, number, string, string], i: number) => { const p = mkPed(loc, d[0], d[1], d[2], d[3], s0 + i * 13, i % 2 === 1); if (d[3] === "chat") p.dir = i % 2 === 0 ? 1 : -1; o.push(p); });
+  for (let i = 0; i < 26; i++) o.push(mkPed("district", h1(i * 3.7 + 1) * 1400, i % 3 === 0 ? 0 : 1, PKINDS[i % PKINDS.length] ?? "coat", "walk", 100 + i * 7, i % 2 === 1));
+  for (let i = 0; i < 4; i++) o.push(mkPed("district", i * 360 + 90, 2, i % 2 ? "umb" : "coat", "walk", 400 + i * 11, i % 2 === 1));
+  add("district", [[112, 1, "vendor", "vendor"], [70, 0, "coat", "look"], [78, 0, "kid", "look"], [300, 0, "coat", "shelter"], [314, 0, "neon", "shelter"], [556, 0, "coat", "chat"], [564, 0, "hood", "chat"], [572, 0, "synth", "chat"], [718, 0, "worker", "smoke"], [790, 0, "dog", "look"], [866, 0, "hood", "smoke"], [1010, 0, "coat", "chat"], [1018, 0, "umb", "chat"], [1160, 0, "synth", "smoke"], [1296, 0, "couple", "shelter"], [1330, 0, "coat", "chat"], [1338, 0, "kid", "chat"]], 300);
+  for (let i = 0; i < 14; i++) o.push(mkPed("market", h1(i * 5.3 + 2) * 900, i % 3 === 0 ? 0 : 1, PKINDS[(i + 3) % PKINDS.length] ?? "coat", "walk", 700 + i * 7, i % 2 === 1));
+  for (let i = 0; i < 2; i++) o.push(mkPed("market", i * 450 + 200, 2, "coat", "walk", 900 + i * 11, i === 1));
+  add("market", [[176, 0, "coat", "shop"], [204, 0, "kid", "shop"], [292, 0, "hood", "chat"], [300, 0, "coat", "chat"], [452, 0, "synth", "shop"], [600, 0, "worker", "smoke"], [640, 0, "coat", "chat"], [648, 0, "neon", "chat"], [748, 0, "coat", "shop"], [850, 0, "couple", "look"]], 1000);
+  return o;
+}
+function mumble(): void {
+  if (!SND) return;
+  const n = 2 + Math.floor(Math.random() * 3); const b0 = 150 + Math.random() * 120;
+  for (let k = 0; k < n; k++) tone(b0 + Math.random() * 60, 0.09, "triangle", 0.01, k * 0.11, b0 + (Math.random() - 0.5) * 80);
+}
+function updPeds(dt: number): void {
+  const g = G; const lw = LOCW[g.loc];
+  for (const p of g.peds) {
+    if (p.loc !== g.loc) continue;
+    if (p.bubT > 0) p.bubT -= dt;
+    if (p.gl > 0) p.gl -= dt;
+    const near = p.lane === 1 && Math.abs(p.x - g.px) < 15 && g.scene === "play";
+    p.dy += ((near ? -4 : 0) - p.dy) * Math.min(1, dt * 7);
+    if (near && p.gl <= 0 && Math.random() < dt * 1.5) p.gl = 1.4;
+    if (p.st === "walk") {
+      const ox = p.x; p.x += p.dir * p.sp * dt * (near ? 0.55 : 1);
+      if (p.lane < 2 && p.kind !== "rider") for (const s of PSTOP[g.loc]) if ((ox - s[0]) * (p.x - s[0]) < 0 && Math.random() < 0.22) { p.st = s[1]; p.stT = 2 + Math.random() * 4; }
+      if (p.x < -40 || p.x > lw + 40) { p.seed += 37; p.dir = h1(p.seed) > 0.5 ? 1 : -1; p.x = p.dir > 0 ? -30 : lw + 30; if (p.lane < 2) pedKind(p, PKINDS[Math.floor(h1(p.seed + 2) * PKINDS.length)] ?? "coat"); }
+    } else if (p.base === "walk") { p.stT -= dt; if (p.stT <= 0) p.st = "walk"; }
+    if (p.st === "chat" && p.bubT <= 0 && Math.random() < dt * 0.35) { p.bubT = 1.4 + Math.random(); const sx = p.x - g.cam; if (sx > 0 && sx < W && (g.gfx || !p.half)) mumble(); }
+  }
+}
+function pedAudio(): void {
+  if (!SND) return;
+  const g = G; let near = 0; let steps = 0;
+  for (const p of g.peds) {
+    if (p.loc !== g.loc || p.lane === 2 || (!g.gfx && p.half)) continue;
+    const d = Math.abs(p.x - g.px); if (d < 160) near += 1 - d / 160;
+    if (p.st === "walk" && d < 70 && p.kind !== "rider" && Math.random() < 0.5) steps = Math.max(steps, 1 - d / 70);
+  }
+  const base = g.loc === "market" ? 0.1 : g.loc === "district" ? 0.02 : 0;
+  SND.murmur.gain.setTargetAtTime(g.loc === "apt" || g.scene !== "play" ? 0 : Math.min(0.2, base + near * 0.012), SND.ctx.currentTime, 0.5);
+  if (steps > 0) noiseHit(0.04, g.loc === "district" ? 2200 : 1100, 0.035 * steps, g.loc === "district" ? "highpass" : "bandpass", false, Math.random() * 0.2);
+  if (g.loc === "district") { const tx = tramX(g.t, g.cam * 0.45); const on = tx > -170 && tx < W; if (on && !g.tramOn) noiseHit(5, 140, 0.16, "lowpass", true); g.tramOn = on; }
+}
+function umbrella(b: Ctx, cx: number, y: number, r: number, col: string, rim: string): void {
+  for (let i = -r; i <= r; i++) { const hh = Math.round(Math.sqrt(Math.max(0, r * r - i * i)) * 0.5); R(b, cx + i, y - hh, 1, hh + 1, col); if (rim) R(b, cx + i, y - hh, 1, 1, rim); }
+  if (rim) { R(b, cx - r, y, 2 * r + 1, 1, rim); glowRect(b, cx - r, y - Math.round(r * 0.5), 2 * r + 1, Math.round(r * 0.5) + 1, rim, 0.4); }
+  R(b, cx, y + 1, 1, 7, "#0a0c10");
+}
+function drawPed(b: Ctx, p: Ped, x: number, y: number, t: number): void {
+  const L = p.look; const mv = p.st === "walk"; let f = p.dir;
+  if (p.gl > 0) f = G.px > p.x ? 1 : -1;
+  const ph = t * (4 + p.sp * 0.12) + p.seed;
+  const top = y - L.h + 6;
+  if (p.kind === "rider") {
+    R(b, x - 8, y - 4, 16, 2, "#1a2228"); R(b, x - 8, y - 2, 4, 2, "#05080a"); R(b, x + 4, y - 2, 4, 2, "#05080a");
+    R(b, x + f * 7, y - 11, 1, 8, "#2a3238"); R(b, x - f * 9 - 3, y - 12, 6, 6, "#a8382e"); R(b, x - f * 9 - 3, y - 12, 6, 1, "#e8584a");
+    drawPerson(b, x, y - 4, L, f, 0, false);
+    R(b, x + f * 8, y - 10, 1, 1, "#fff2c0"); glow(b, x + f * 10, y - 10, 12, "255,240,200", 0.8); glow(b, x - f * 9, y - 6, 6, "255,80,80", 0.6);
+    return;
+  }
+  if (p.kind === "couple") { drawPerson(b, x - 3, y, L, f, ph, mv); drawPerson(b, x + 3, y, p.look2, f, ph + 1.7, mv); umbrella(b, x, top - 2, 11, "#1a1420", "#ff6f9a"); return; }
+  if (p.kind === "vendor") {
+    R(b, x + 4, y - 11, 18, 9, "#3a2616"); R(b, x + 4, y - 12, 18, 1, "#c85a2a"); R(b, x + 6, y - 2, 3, 2, "#05080a"); R(b, x + 17, y - 2, 3, 2, "#05080a");
+    R(b, x + 13, y - 30, 1, 18, "#1a1a1a");
+    for (let i = -12; i <= 12; i++) R(b, x + 13 + i, y - 31 - Math.round(Math.sqrt(144 - i * i) * 0.35), 1, 2, ((i + 12) % 6) < 3 ? "#d8402a" : "#e8d0a0");
+    glow(b, x + 13, y - 14, 14, "255,170,90", 0.6);
+    for (let k = 0; k < 3; k++) { const q = (t * 0.6 + k / 3) % 1; b.globalAlpha = 0.35 * (1 - q); R(b, x + 8 + k * 4 + Math.sin(t * 2 + k) * 1.5, y - 13 - q * 12, 2, 2, "#e8e0d0"); b.globalAlpha = 1; }
+    drawPerson(b, x, y, L, 1, 0, false); return;
+  }
+  drawPerson(b, x, y, L, f, ph, mv);
+  if (p.kind === "hood") { R(b, x - 3, top - 8, 6, 2, L.coat); R(b, f > 0 ? x - 3 : x + 2, top - 7, 1, 5, L.coat); }
+  if (p.kind === "umb" || p.kind === "neon") umbrella(b, x + f, top - 3, 8, p.lane === 0 ? "#141a20" : "#181c24", p.kind === "neon" ? NEONS[p.seed % 4] ?? "#5ff0d8" : "");
+  if (p.kind === "synth") { if (Math.sin(t * 0.9 + p.seed) > 0.75) { R(b, f > 0 ? x + 1 : x - 2, top - 4, 1, 1, "#5ff0d8"); glow(b, x, top - 4, 4, "95,240,216", 0.6); } R(b, x - 2, top - 1, 4, 1, "#3a8a80"); }
+  if (p.kind === "dog") {
+    const dx = x + f * 9; const bb = mv ? Math.round(Math.abs(Math.sin(ph * 1.5))) : 0;
+    R(b, dx - 3, y - 4 - bb, 6, 3, "#4a3220"); R(b, f > 0 ? dx + 2 : dx - 4, y - 6 - bb, 2, 3, "#4a3220"); R(b, f > 0 ? dx - 4 : dx + 3, y - 5 - bb, 1, 1, "#4a3220");
+    R(b, dx - 3, y - 1, 1, 1, "#2a1a10"); R(b, dx + 2, y - 1, 1, 1, "#2a1a10");
+    for (let k = 0; k < 6; k++) R(b, x + f * (3 + k), top + 5 + Math.round((y - 6 - top - 5) * k / 6), 1, 1, "#0a0c10");
+  }
+  if (p.st === "smoke") { const hx = x + f * 4; const hy = top + 3; R(b, hx, hy, 1, 1, "#ff6a3a"); for (let k = 0; k < 4; k++) { const q = (t * 0.45 + k / 4 + p.seed * 0.1) % 1; b.globalAlpha = 0.4 * (1 - q); R(b, hx + Math.sin(t + k * 2) * 2 + q * f * 4, hy - 2 - q * 14, 2 + Math.round(q * 2), 2, "#cfe8e4"); } b.globalAlpha = 1; }
+  if (p.st === "look") { R(b, x - 2, top - 8, 4, 1, L.hair); glow(b, x + f, top - 4, 6, "255,111,154", 0.35); }
+  if (p.bubT > 0 && p.st === "chat") { const by = top - 16; R(b, x - 4, by, 9, 5, "#dfe9e8"); R(b, x - 1, by + 5, 1, 1, "#dfe9e8"); const n = Math.floor(t * 4) % 4; for (let k = 0; k < 3; k++) if (k < n) R(b, x - 2 + k * 2, by + 2, 1, 1, "#203038"); }
+}
+function drawPeds(b: Ctx, cam: number, lane: number): void {
+  const t = G.t; const ly = lane === 0 ? (G.loc === "market" ? FEET - 3 : FEET - 7) : FEET;
+  for (const p of G.peds) {
+    if (p.loc !== G.loc || p.lane !== lane || (!G.gfx && p.half)) continue;
+    const sx = Math.round(p.x - cam); if (sx < -34 || sx > W + 34) continue;
+    drawPed(b, p, sx, ly + Math.round(p.dy), t);
+  }
+}
 type Chat = { a: Npc; b: Npc; l: string[]; t: number };
 type Part = { x: number; y: number; vx: number; vy: number; l: number; m: number; c: string };
 type Fly = { x: number; y: number; dir: number; speed: number; snd: boolean };
@@ -558,7 +706,7 @@ type Game = {
   panel: Panel; rev: number; near: string; toast: { text: string; t: number } | null; banner: { a: string; b: string; t: number } | null;
   npcs: Npc[]; chat: Chat | null; chatCd: number; drops: Drop[]; cars: Car[]; flash: number;
   music: number; sfx: number; amb: number; gfx: number; textSpeed: number; saveNote: string; bagTab: string; openItem: string; ringing: boolean;
-  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; sweep: number; sndT: number; lookX: number;
+  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; sweep: number; sndT: number; lookX: number; peds: Ped[]; tramOn: boolean;
 };
 
 const LK: Record<string, Look> = {
@@ -605,7 +753,7 @@ function makeNpcs(): Npc[] {
   ];
 }
 function makeDrops(): Drop[] { const d: Drop[] = []; for (let i = 0; i < 150; i++) d.push({ x: Math.random() * 380, y: Math.random() * H, v: 160 + Math.random() * 120, l: 3 + Math.floor(Math.random() * 4), g: FEET + Math.random() * 20 }); return d; }
-function makeCars(): Car[] { const o: Car[] = []; for (let i = 0; i < 5; i++) o.push({ x: h1(i * 6.1) * 600, y: 22 + Math.floor(h1(i * 2.9) * 50), speed: 25 + h1(i * 1.3) * 35, dir: i % 2 === 0 ? 1 : -1, layer: i < 2 ? 0.25 : 0.5 }); return o; }
+function makeCars(): Car[] { const o: Car[] = []; for (let i = 0; i < 11; i++) o.push({ x: h1(i * 6.1) * 600, y: 34 + Math.floor(h1(i * 2.9) * 62), speed: 25 + h1(i * 1.3) * 35, dir: i % 2 === 0 ? 1 : -1, layer: i < 4 ? 0.25 : i < 8 ? 0.5 : 0.7 }); return o; }
 function newGame(): Game {
   return {
     scene: "menu", t: 0, sceneT: 0, loc: "apt", px: 104, py: FEET, vx: 0, vy: 0, grounded: true, facing: 1, walk: 0, stepPh: 0, landT: 0, actT: 0, actKind: "interact",
@@ -615,7 +763,7 @@ function newGame(): Game {
     panel: "none", rev: 1, near: "", toast: null, banner: null,
     npcs: makeNpcs(), chat: null, chatCd: 6, drops: makeDrops(), cars: makeCars(), flash: 0,
     music: 0.6, sfx: 0.7, amb: 0.7, gfx: 1, textSpeed: 1, saveNote: "", bagTab: "items", openItem: "", ringing: false,
-    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, sweep: 6, sndT: 0, lookX: 0,
+    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, sweep: 6, sndT: 0, lookX: 0, peds: makePeds(), tramOn: false,
   };
 }
 const G: Game = newGame();
@@ -675,7 +823,7 @@ function setMood(m: string): void {
   if (!SND) return;
   const now = SND.ctx.currentTime;
   for (const k of Object.keys(SND.pads)) { const p = SND.pads[k]; if (p) p.gain.setTargetAtTime(k === m ? 1 : 0, now, 0.9); }
-  const rv = m === "district" ? 0.35 : m === "menu" ? 0.3 : m === "apt" ? 0.12 : m === "market" ? 0.04 : 0;
+  const rv = m === "district" ? 0.16 : m === "menu" ? 0.14 : m === "apt" ? 0.045 : m === "market" ? 0.015 : 0;
   SND.rain.gain.setTargetAtTime(rv, now, 0.6);
   SND.rainF.frequency.setTargetAtTime(m === "apt" ? 900 : 2200, now, 0.5);
   const ag = (n: GainNode, v: number): void => { n.gain.setTargetAtTime(v, now, 0.8); };
@@ -1042,6 +1190,7 @@ function update(dt: number): void {
     if (g.sceneT > 12.5 || (g.actQ && g.sceneT > 1.5)) endGlitch();
     g.actQ = false; g.jumpQ = false; return;
   }
+  updPeds(dt);
   // npcs
   for (const n of g.npcs) {
     if (n.bubbleT > 0) n.bubbleT -= dt;
@@ -1085,7 +1234,7 @@ function update(dt: number): void {
   } else g.fly = null;
   if (g.loc === "apt") { const was = g.sweep; g.sweep -= dt; if (was >= 0 && g.sweep < 0) noiseHit(1.6, 700, 0.05, "bandpass", true); if (g.sweep < -2.2) g.sweep = 7 + Math.random() * 7; }
   g.sndT -= dt;
-  if (g.sndT <= 0 && SND) { g.sndT = 0.25; let sv = 0; if (g.loc === "district") for (const vx of [332, 846]) sv = Math.max(sv, 1 - Math.abs(g.px - vx) / 90); SND.steam.gain.setTargetAtTime(Math.max(0, sv) * 0.14, SND.ctx.currentTime, 0.2); }
+  if (g.sndT <= 0 && SND) { g.sndT = 0.25; let sv = 0; if (g.loc === "district") for (const vx of [332, 846]) sv = Math.max(sv, 1 - Math.abs(g.px - vx) / 90); SND.steam.gain.setTargetAtTime(Math.max(0, sv) * 0.14, SND.ctx.currentTime, 0.2); pedAudio(); }
   if (g.scene === "end") { g.actQ = false; g.jumpQ = false; return; }
   const talking = !!g.dlg;
   if (talking) dlgTick(dt);
@@ -1129,6 +1278,96 @@ function update(dt: number): void {
 
 // ---------- render ----------
 type Caches = { far: HTMLCanvasElement; mid: HTMLCanvasElement; apt: HTMLCanvasElement; dist: HTMLCanvasElement; mkt: HTMLCanvasElement; mktB: HTMLCanvasElement; haze: HTMLCanvasElement; bokD: HTMLCanvasElement; bokM: HTMLCanvasElement; bokA: HTMLCanvasElement; topD: HTMLCanvasElement; topM: HTMLCanvasElement };
+function makeCaches(mk: (w: number, h: number) => HTMLCanvasElement): Caches {
+  const cc: Caches = { far: mk(FW, H), mid: mk(MW, H), apt: mk(360, H), dist: mk(1400, H), mkt: mk(900, H), mktB: mk(KW, H), haze: mk(HW, H), bokD: mk(Math.ceil(1400 * 1.3) + 400, 60), bokM: mk(Math.ceil(900 * 1.3) + 400, 30), bokA: mk(Math.ceil(360 * 1.3) + 400, 28), topD: mk(Math.ceil(1400 * 1.2) + 400, 96), topM: mk(Math.ceil(900 * 1.2) + 400, 48) };
+  const bk = (e: HTMLCanvasElement, fn: (c: Ctx) => void): void => { const x = e.getContext("2d"); if (x) fn(x); };
+  bk(cc.far, bakeFar); bk(cc.mid, bakeMid); bk(cc.apt, bakeApt); bk(cc.dist, bakeDistrict); bk(cc.mkt, bakeMarket); bk(cc.mktB, bakeMarketBack);
+  bk(cc.haze, bakeHaze); bk(cc.bokD, (c: Ctx) => bakeBokeh(c, BOK_D, 5)); bk(cc.bokM, (c: Ctx) => bakeBokeh(c, BOK_M, 9)); bk(cc.bokA, (c: Ctx) => bakeBokeh(c, BOK_A, 13)); bk(cc.topD, (c: Ctx) => bakeCanopy(c, 3)); bk(cc.topM, (c: Ctx) => bakeTop(c, 8));
+  return cc;
+}
+function tramX(t: number, midX: number): number { const per = W + 700; return ((((t * 16 - midX) % per) + per) % per) - 260; }
+const DPROPS: [number, number][] = [[8, 0], [118, 1], [362, 0], [612, 1], [756, 0], [904, 1], [1182, 0], [1376, 1]];
+function drawProps(b: Ctx, cam: number): void {
+  for (const [px, k] of DPROPS) {
+    const x = Math.round(px - cam); if (x < -30 || x > W + 10) continue;
+    if (k === 0) { R(b, x, FEET - 9, 11, 9, "#4a3a24"); R(b, x, FEET - 9, 11, 1, "#7a6040"); R(b, x + 5, FEET - 9, 1, 9, "#2a2014"); R(b, x + 3, FEET - 16, 9, 7, "#5a4a2c"); R(b, x + 3, FEET - 16, 9, 1, "#8a7048"); R(b, x + 5, FEET - 14, 4, 2, "#d8c060"); R(b, x + 12, FEET - 6, 8, 6, "#3a2c1c"); R(b, x + 12, FEET - 6, 8, 1, "#6a5434"); }
+    else { R(b, x, FEET - 8, 18, 8, "#2a3034"); R(b, x, FEET - 8, 18, 1, "#4a5458"); plant(b, x + 1, FEET - 8, 16, px); }
+  }
+}
+function bigScreen(b: Ctx, x: number, y: number, w: number, h: number, t: number, seed: number): void {
+  if (x > W + 4 || x + w < -4) return;
+  R(b, x - 1, y - 1, w + 2, h + 2, "#05080c");
+  for (let yy = 0; yy < h; yy += 2) { const v = Math.sin(yy * 0.18 + t * 1.3 + seed) * 0.5 + 0.5; R(b, x, y + yy, w, 2, v > 0.66 ? "#1e8a8a" : v > 0.33 ? "#165a6a" : "#0e3a4a"); }
+  const fx = Math.round(x + w / 2 + Math.sin(t * 0.4 + seed) * w * 0.2);
+  b.globalAlpha = 0.85; R(b, fx - 5, y + Math.round(h * 0.35), 10, h - Math.round(h * 0.35), "#ff6f9a"); R(b, fx - 3, y + Math.round(h * 0.12), 6, 8, "#ffb0c8"); R(b, fx - 4, y + Math.round(h * 0.1), 8, 3, "#3a1a3a"); b.globalAlpha = 1;
+  for (let k = 0; k < 3; k++) R(b, x + 3, y + h - 7 + k * 2, Math.round((w - 6) * (0.4 + 0.6 * h1(seed + k + Math.floor(t / 2)))), 1, "#ffe0b0");
+  for (let yy = 0; yy < h; yy += 2) R(b, x, y + yy, w, 1, "rgba(0,0,0,0.22)");
+  glowRect(b, x, y, w, h, "#3df5d0", 0.35); glow(b, x + w / 2, y + h / 2, w, "255,111,154", 0.18);
+}
+function drawHauler(b: Ctx, cam: number, t: number): void {
+  const X = Math.round(1150 - cam); if (X < -230 || X > W + 120) return;
+  const Y = 124 + Math.round(Math.sin(t * 1.3) * 1.5);
+  b.save(); b.globalCompositeOperation = "lighter";
+  const bg = b.createRadialGradient(X - 36, Y - 4, 2, X - 36, Y - 4, 190); bg.addColorStop(0, "rgba(255,196,110,0.5)"); bg.addColorStop(0.5, "rgba(255,160,70,0.16)"); bg.addColorStop(1, "rgba(255,140,60,0)");
+  b.fillStyle = bg; b.beginPath(); b.moveTo(X - 36, Y - 7); b.lineTo(X - 230, Y - 40); b.lineTo(X - 240, FEET + 50); b.lineTo(X - 34, Y + 1); b.closePath(); b.fill();
+  b.fillStyle = "rgba(255,210,150,0.5)";
+  for (let i = 0; i < 26; i++) { const q = ((t * (1.4 + h1(i) * 0.8) + h1(i * 3.1)) % 1); const rx = X - 40 - h1(i * 7.3) * 150; const ry = Y - 40 + q * 90; if (ry > Y - 30 + (X - 36 - rx) * -0.15 && ry < Y + (X - 36 - rx) * 0.6) b.fillRect(Math.round(rx), Math.round(ry), 1, 4); }
+  b.restore();
+  glow(b, X - 10, Y - 6, 120, "255,170,80", 0.32);
+  R(b, X - 36, Y - 13, 64, 15, "#3a2a14"); R(b, X - 36, Y - 13, 64, 1, "#a87a34"); R(b, X - 36, Y + 1, 64, 1, "#1a1208");
+  R(b, X - 30, Y - 22, 26, 9, "#2a1e10"); R(b, X - 28, Y - 21, 16, 6, "#5a8a8a"); R(b, X - 28, Y - 21, 16, 1, "#9ad0c8");
+  R(b, X - 22, Y - 24, 18, 2, "#ffb04a"); glowRect(b, X - 22, Y - 24, 18, 2, "#ffb04a", 0.9);
+  for (let k = 0; k < 6; k++) R(b, X - 28 + k * 4, Y - 6, 2, 4, "#ffcf60");
+  glowRect(b, X - 28, Y - 6, 22, 4, "#ffcf60", 0.7);
+  R(b, X - 37, Y - 9, 3, 3, "#fff2c8"); R(b, X - 37, Y - 3, 3, 2, "#ffd890");
+  glow(b, X - 36, Y - 7, 22, "255,230,170", 1); glow(b, X - 36, Y - 2, 14, "255,200,120", 0.9);
+  R(b, X - 8, Y - 9, 34, 1, "#24180a"); R(b, X + 2, Y - 12, 1, 12, "#24180a"); R(b, X + 26, Y - 11, 1, 7, "#ff4a3a"); glow(b, X + 27, Y - 7, 8, "255,80,60", 0.7);
+  for (let k = 0; k < 8; k++) R(b, X + 6 + k * 2, Y - 4 + (k % 2), 1, 1, "#d8a020");
+  R(b, X - 28, Y + 2, 12, 2, "#1a1410"); R(b, X + 6, Y + 2, 12, 2, "#1a1410");
+  glow(b, X - 22, Y + 6, 12, "255,190,110", 0.8); glow(b, X + 12, Y + 6, 12, "255,190,110", 0.8);
+}
+function bakeCanopy(c: Ctx, seed: number): void {
+  bakeTop(c, seed);
+  const w = c.canvas.width;
+  for (let k = 0; k < w / 420; k++) {
+    const cx = k * 420 + 30 + h1(seed + k * 3) * 120;
+    for (let s = 0; s < 7; s++) {
+      const hx = Math.round(cx - 50 + s * 22 + h1(seed + s + k) * 10); const len = Math.round(26 + h1(seed + s * 5 + k) * 40);
+      R(c, hx, 8, 1, len, "#030605");
+      const col = s % 3 === 0 ? "255,190,110" : s % 3 === 1 ? "95,240,216" : "255,111,154";
+      R(c, hx - 1, 8 + len, 3, 3, `rgb(${col})`);
+      c.save(); c.globalCompositeOperation = "lighter"; c.globalAlpha = 0.9; c.drawImage(glowSprite(col), hx - 11, len - 3, 24, 24); c.restore();
+    }
+    for (let i = 0; i < 90; i++) {
+      const a = h1(seed + k * 31 + i * 1.7); const bx = cx + (h1(seed + i * 2.3 + k) - 0.35) * 170;
+      const by = -8 + h1(seed + i * 4.1 + k) * 46 * Math.max(0.15, 1 - Math.abs(bx - cx - 20) / 110); const r = 4 + a * 9;
+      c.fillStyle = a < 0.3 ? "#0b1d14" : a < 0.7 ? "#07140d" : "#040a07"; c.beginPath(); c.arc(bx, by, r, 0, Math.PI * 2); c.fill();
+      if (a > 0.78) { c.fillStyle = "rgba(70,190,150,0.4)"; c.fillRect(Math.round(bx - r * 0.5), Math.round(by + r * 0.7), 3, 1); }
+    }
+    for (let i = 0; i < 4; i++) { const x0 = cx - 40 + i * 30; for (let y = 0; y < 40; y++) R(c, x0 + Math.round(Math.sin(y * 0.2 + i) * 3) + Math.round(y * (i - 1.5) * 0.3), y, 2, 1, "#050a07"); }
+  }
+}
+function waterPlane(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement, cam: number, t: number): void {
+  const wl = FEET - YO; const top = wl + 5; const depth = H - top;
+  rc.setTransform(1, 0, 0, 1, 0, 0); rc.globalAlpha = 1; rc.globalCompositeOperation = "copy"; rc.drawImage(buf, 0, 0); rc.globalCompositeOperation = "source-over";
+  R(b, 0, wl, W, top - wl, "#0b1216"); R(b, 0, wl, W, 1, "#3a5058"); R(b, 0, top - 1, W, 1, "#05080a");
+  for (let wx = Math.floor(cam / 24) * 24; wx < cam + W + 24; wx += 24) { const sx = wx - cam; R(b, sx, wl + 2, 2, 1, "#ffcf7a"); glow(b, sx + 1, wl + 2, 6, "255,190,110", 0.45); }
+  R(b, 0, top, W, depth, "#03090c");
+  for (let y = top; y < H; y++) {
+    const d = y - top; const src = wl - 1 - Math.floor(d * 0.85); if (src < 1) break;
+    const off = Math.round(Math.sin(y * 0.8 + t * 2.4) * (0.5 + d * 0.04));
+    b.globalAlpha = 0.46 - (d / depth) * 0.2; b.drawImage(rbuf, 0, src, W, 1, off, y, W, 1);
+  }
+  b.save(); b.globalCompositeOperation = "lighter";
+  const bands = G.gfx ? 4 : 2;
+  for (let k = 0; k < bands; k++) { b.globalAlpha = 0.2 - k * 0.025; b.drawImage(rbuf, 0, wl - 10 - k * 21, W, 6, 0, top + k * 2, W, depth - k * 2); }
+  b.restore(); b.globalAlpha = 1;
+  const gw = b.createLinearGradient(0, top, 0, H); gw.addColorStop(0, "rgba(4,16,18,0.05)"); gw.addColorStop(1, "rgba(2,8,10,0.4)"); b.fillStyle = gw; b.fillRect(0, top, W, depth);
+  for (let i = 0; i < 26; i++) { const x = ((h1(i * 3.3) * (W + 40) - cam * 1.1 + t * 3 * ((i % 3) - 1)) % (W + 40) + W + 40) % (W + 40) - 20; const y = top + 2 + h1(i * 7.7) * (depth - 4); b.globalAlpha = 0.18 + 0.14 * Math.sin(t * 2 + i); R(b, x, y, 3 + (i % 4) * 2, 1, "#9fd8d0"); }
+  for (let i = 0; i < 12; i++) { const x = ((h1(i * 5.1) * 1600 - cam * 1.05 + t * 1.5) % (W + 60) + W + 60) % (W + 60) - 30; const y = top + 3 + Math.floor(h1(i * 1.9) * 10); b.globalAlpha = 0.9; R(b, x, y, 5 + (i % 3) * 2, 1, i % 4 === 0 ? "#4a2a40" : "#123222"); R(b, x + 1, y - 1, 3, 1, "#0a1a12"); }
+  b.globalAlpha = 1;
+  for (let wx = Math.floor(cam / 140) * 140 + 40; wx < cam + W + 20; wx += 140) { const sx = wx - cam; R(b, sx, top, 5, depth, "#04080a"); R(b, sx, top, 1, depth, "#1a2a2e"); }
+}
 function city(b: Ctx, cc: Caches, farX: number, midX: number, t: number, camC: number): void {
   const sky = b.createLinearGradient(0, 0, 0, FEET);
   sky.addColorStop(0, "#02060a"); sky.addColorStop(0.5, "#082026"); sky.addColorStop(1, "#164a46");
@@ -1155,9 +1394,16 @@ function city(b: Ctx, cc: Caches, farX: number, midX: number, t: number, camC: n
     R(b, fx, y, 1, 1, "#fff6d0"); R(b, bx, y, 1, 1, "#ff5a5a");
     glow(b, fx, y, 7, "255,246,208", 0.7); glow(b, bx, y, 5, "255,80,80", 0.7);
   }
+  { const span = W + 260; const bx = ((((300 - camC * 0.3) % span) + span) % span) - 200;
+    R(b, bx, 98, 190, 3, "#0d2a30"); R(b, bx, 97, 190, 1, "#2a6a6a"); R(b, bx, 92, 190, 1, "#0d2a30"); for (let k = 0; k < 190; k += 16) R(b, bx + k, 92, 1, 6, "#0d2a30");
+    for (let i = 0; i < 10; i++) { const q = (((t * (2 + (i % 3)) * (i % 2 ? 1 : -1)) / 190 + h1(i * 2.1)) % 1 + 1) % 1; R(b, bx + q * 190, 92, 1, 5, "#081a1e"); } }
   b.drawImage(cc.mid, Math.round(midX), 0, W, H, 0, 0, W, H);
   midAds(b, midX, t);
-  const fog = b.createLinearGradient(0, 70, 0, FEET); fog.addColorStop(0, "rgba(60,160,140,0)"); fog.addColorStop(1, "rgba(60,160,140,0.3)");
+  R(b, 0, 66, W, 2, "#0a161c"); for (let x = -(Math.round(midX) % 90); x < W; x += 90) R(b, x, 68, 3, FEET - 68, "#0a141a");
+  { const tx = Math.round(tramX(t, midX));
+    if (tx > -170 && tx < W + 10) { for (let k = 0; k < 4; k++) { const cx = tx + k * 40; R(b, cx, 56, 38, 10, "#16242c"); R(b, cx, 56, 38, 1, "#3a5866"); for (let w = 0; w < 6; w++) R(b, cx + 3 + w * 6, 59, 4, 3, (k + w) % 5 === 0 ? "#5ff0d8" : "#ffcf7a"); glowRect(b, cx + 2, 58, 34, 5, "#ffcf7a", 0.25); R(b, cx + 18, 53, 1, 3, "#3a4a52"); }
+      glow(b, tx + 160, 62, 16, "255,240,200", 0.8); if (h1(Math.floor(t * 9)) > 0.93) glow(b, tx + 98, 53, 8, "180,220,255", 1); } }
+  const fog = b.createLinearGradient(0, 70, 0, FEET); fog.addColorStop(0, "rgba(60,160,140,0)"); fog.addColorStop(1, "rgba(60,160,140,0.42)");
   b.fillStyle = fog; b.fillRect(0, 70, W, FEET - 70);
 }
 function rain(b: Ctx, a: number): void {
@@ -1244,16 +1490,19 @@ function drawDistrictDyn(b: Ctx, cam: number): void {
   neon(b, "PIX REPAIR", S(399), 96, "#5ff0d8", t, 5, 1);
   neon(b, "LUCKY 9", S(677), 99, "#ffb04a", t, 7, 1);
   neon(b, "CLINIC 24", S(959), 94, "#5ff0d8", t, 9, 1);
-  holoAd(b, S(64), 40, 64, 30, "eye", t, 31);
-  holoAd(b, S(798), 36, 46, 34, "koi", t, 33);
-  holoAd(b, S(1008), 28, 50, 36, "heart", t, 35);
-  holoAd(b, S(1232), 42, 52, 40, "sun", t, 37);
-  vneon(b, "ROOMS", S(484), 30, "#ff6f9a", t, 41);
+  holoAd(b, S(64), 52, 64, 30, "eye", t, 31);
+  holoAd(b, S(798), 50, 46, 34, "koi", t, 33);
+  holoAd(b, S(940), 50, 40, 30, "heart", t, 35);
+  holoAd(b, S(1232), 56, 52, 40, "sun", t, 37);
+  bigScreen(b, S(700), 46, 36, 44, t, 3); bigScreen(b, S(1096), 50, 40, 40, t, 7); bigScreen(b, S(296), 46, 30, 40, t, 11);
+  vneon(b, "HOTEL", S(268), 52, "#5ff0d8", t, 45); vneon(b, "NOODLE", S(1206), 48, "#ffb04a", t, 47);
+  vneon(b, "ROOMS", S(484), 48, "#ff6f9a", t, 41);
   vneon(b, "BAR", S(634), 58, "#ffb04a", t, 43);
   const cx = S(1040); const on = flick(t, 21);
   if (on) { R(b, cx - 1, 76, 3, 9, "#5ff0d8"); R(b, cx - 4, 79, 9, 3, "#5ff0d8"); glow(b, cx, 80, 14, "95,240,216", 0.7); }
   const bx = S(496);
   if (bx > -110 && bx < W + 10) {
+    b.save(); b.translate(0, 14);
     R(b, bx, 28, 98, 62, "#03141a");
     for (let xx = 0; xx < 98; xx++) R(b, bx + xx, Math.round(76 + Math.sin(xx * 0.09 + t * 2) * 6), 1, 1, "#1fb8a8");
     const cxr = bx + 49; const cyr = 46;
@@ -1265,6 +1514,7 @@ function drawDistrictDyn(b: Ctx, cam: number): void {
     ptext(b, m, bx + 49 - (m.length * 4 - 1) / 2 + (gl ? 2 : 0), 62, gl ? "#5ff0d8" : "#ffe0b0", 1);
     for (let yy = 28; yy < 90; yy += 2) R(b, bx, yy, 98, 1, "rgba(0,0,0,0.25)");
     glowRect(b, bx, 28, 98, 62, "#2ef2d0", 0.3); glow(b, bx + 49, 130, 80, "60,220,190", 0.18);
+    b.restore();
   }
   for (const vx of [332, 846]) for (let i = 0; i < 8; i++) {
     const p = (t * 12 + i * 6) % 50; b.globalAlpha = 0.22 * (1 - p / 50);
@@ -1337,6 +1587,7 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
   }
   const cam = Math.round(g.cam);
   const seated = g.scene === "cut";
+  YO = g.loc === "district" && (g.scene === "play" || g.scene === "end") ? 44 : 0;
   if (g.loc === "apt") {
     drawApt(b, cc, cam, seated);
     drawNpcs(b, cam);
@@ -1344,18 +1595,24 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     reflect(b, rc, buf, rbuf, 0.1, [], cam);
     if (seated && g.sceneT < 9) { b.globalAlpha = clamp(1 - (g.sceneT - 8) / 0.9, 0, 1); R(b, 0, 0, W, H, "#000"); b.globalAlpha = 1; }
   } else if (g.loc === "district") {
+    b.setTransform(1, 0, 0, 1, 0, -YO);
     city(b, cc, cam * 0.15, cam * 0.45, t, cam);
     b.drawImage(cc.dist, cam, 0, W, H, 0, 0, W, H);
+    if (g.gfx) { const hz = b.createLinearGradient(0, YO, 0, FEET); hz.addColorStop(0, "rgba(70,170,145,0.4)"); hz.addColorStop(0.65, "rgba(50,140,120,0.12)"); hz.addColorStop(1, "rgba(40,110,100,0)"); b.fillStyle = hz; b.fillRect(0, YO, W, FEET - YO); }
     drawDistrictDyn(b, cam);
+    drawProps(b, cam);
+    drawHauler(b, cam, t);
+    drawPeds(b, cam, 0);
     drawNpcs(b, cam);
     drawDistrictFront(b, cam);
+    drawPeds(b, cam, 1);
     drawFly(b, cam, t);
-    for (let k = 0; k < 5; k++) { const x = ((k * 130 - cam * 0.8 + t * (4 + k)) % (W + 160) + W + 160) % (W + 160) - 80; glow(b, x, 130 + (k % 3) * 10, 60, "70,170,150", 0.1); }
+    for (let k = 0; k < 5; k++) { const x = ((k * 130 - cam * 0.8 + t * (4 + k)) % (W + 160) + W + 160) % (W + 160) - 80; glow(b, x, 120 + (k % 3) * 10, 70, "70,170,150", 0.14); }
     glow(b, g.px - cam, g.py - 12, 18, "255,190,120", 0.16);
     drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
-    reflect(b, rc, buf, rbuf, 0.26, [96, 334, 520, 700, 874, 1010, 1180], cam);
-    const lf = b.createLinearGradient(0, FEET - 30, 0, H); lf.addColorStop(0, "rgba(70,170,150,0)"); lf.addColorStop(1, "rgba(70,170,150,0.16)");
-    b.fillStyle = lf; b.fillRect(0, FEET - 30, W, H - FEET + 30);
+    drawParts(b, cam);
+    b.setTransform(1, 0, 0, 1, 0, 0);
+    waterPlane(b, rc, buf, rbuf, cam, t);
     rain(b, 1);
   } else {
     const bg = b.createLinearGradient(0, 0, 0, FEET); bg.addColorStop(0, "#050807"); bg.addColorStop(1, "#14302a");
@@ -1365,11 +1622,13 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     drawMarketDyn(b, cam);
     drawNpcs(b, cam);
     drawMarketFront(b, cam);
+    drawPeds(b, cam, 0);
+    drawPeds(b, cam, 1);
     glow(b, g.px - cam, g.py - 12, 18, "255,190,120", 0.18);
     drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
     reflect(b, rc, buf, rbuf, 0.2, [210, 420, 660], cam);
   }
-  drawParts(b, cam);
+  if (g.loc !== "district") drawParts(b, cam);
   const vg = b.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, W * 0.65);
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,4,10,0.6)");
   b.fillStyle = vg; b.fillRect(0, 0, W, H);
@@ -1468,7 +1727,7 @@ function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, in
   c.textAlign = "left"; c.textBaseline = "alphabetic"; c.shadowBlur = 0;
   const v = g.view; const cam = Math.round(g.cam);
   const toX = (wx: number): number => ((wx - cam - v.sx) * v.z / W) * cw;
-  const toY = (wy: number): number => ((wy - v.sy) * v.z / H) * ch;
+  const toY = (wy: number): number => ((wy - YO - v.sy) * v.z / H) * ch;
   if (g.scene === "menu") {
     c.fillStyle = "rgba(2,8,10,0.35)"; c.fillRect(0, 0, cw, ch);
     const ts = Math.round(clamp(cssH * 0.14, 30, 70) * dpr);
@@ -1622,15 +1881,10 @@ export default function AfterRain() {
     const mk = (w: number): HTMLCanvasElement => { const e = document.createElement("canvas"); e.width = w; e.height = H; return e; };
     const buf = mk(W); const rbuf = mk(W);
     const mk2 = (w: number, h: number): HTMLCanvasElement => { const e = document.createElement("canvas"); e.width = w; e.height = h; return e; };
-    const cc: Caches = { far: mk(FW), mid: mk(MW), apt: mk(360), dist: mk(1400), mkt: mk(900), mktB: mk(KW), haze: mk(HW), bokD: mk2(Math.ceil(1400 * 1.3) + 400, 28), bokM: mk2(Math.ceil(900 * 1.3) + 400, 28), bokA: mk2(Math.ceil(360 * 1.3) + 400, 28), topD: mk2(Math.ceil(1400 * 1.2) + 400, 48), topM: mk2(Math.ceil(900 * 1.2) + 400, 48) };
+    const cc: Caches = makeCaches(mk2);
     const fgc = mk(W); const bl0 = mk2(160, 90); const bl1 = mk2(80, 45); const bl2 = mk2(80, 45); const bl3 = mk2(20, 12);
     const b = buf.getContext("2d"); const rc = rbuf.getContext("2d");
-    const c1 = cc.far.getContext("2d"); const c2 = cc.mid.getContext("2d"); const c3 = cc.apt.getContext("2d");
-    const c4 = cc.dist.getContext("2d"); const c5 = cc.mkt.getContext("2d"); const c6 = cc.mktB.getContext("2d");
-    if (!ctx || !b || !rc || !c1 || !c2 || !c3 || !c4 || !c5 || !c6) return;
-    bakeFar(c1); bakeMid(c2); bakeApt(c3); bakeDistrict(c4); bakeMarket(c5); bakeMarketBack(c6);
-    const bk = (e: HTMLCanvasElement, fn: (c: Ctx) => void): void => { const x = e.getContext("2d"); if (x) fn(x); };
-    bk(cc.haze, bakeHaze); bk(cc.bokD, (c: Ctx) => bakeBokeh(c, BOK_D, 5)); bk(cc.bokM, (c: Ctx) => bakeBokeh(c, BOK_M, 9)); bk(cc.bokA, (c: Ctx) => bakeBokeh(c, BOK_A, 13)); bk(cc.topD, (c: Ctx) => bakeTop(c, 3)); bk(cc.topM, (c: Ctx) => bakeTop(c, 8));
+    if (!ctx || !b || !rc) return;
     const fx2 = fgc.getContext("2d"); const bx0 = bl0.getContext("2d"); const bx1 = bl1.getContext("2d"); const bx2 = bl2.getContext("2d"); const bx3 = bl3.getContext("2d");
     const grain = mk2(96, 96); const gctx = grain.getContext("2d");
     if (gctx) { const id = gctx.createImageData(96, 96); for (let i = 0; i < id.data.length; i += 4) { const v = Math.floor(Math.random() * 255); id.data[i] = v; id.data[i + 1] = v; id.data[i + 2] = v; id.data[i + 3] = 255; } gctx.putImageData(id, 0, 0); }
@@ -1658,18 +1912,18 @@ export default function AfterRain() {
       const z = G.scene === "play" || G.scene === "cut" ? Math.max(1, G.zoom) : 1;
       const sw = W / z; const sh = H / z;
       const fx = G.scene === "cut" ? 100 - Math.round(G.cam) : G.px - Math.round(G.cam);
-      const sx = clamp(fx - sw / 2, 0, W - sw); const sy = clamp(FEET - 24 - sh * 0.55, 0, H - sh);
+      const sx = clamp(fx - sw / 2, 0, W - sw); const sy = clamp(FEET - YO - 24 - sh * 0.55, 0, H - sh);
       G.view = { sx, sy, z };
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(buf, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
       if (G.gfx && bx0 && bx1 && bx2 && bx3) {
         bx0.globalCompositeOperation = "copy"; bx0.imageSmoothingEnabled = true; bx0.drawImage(buf, sx, sy, sw, sh, 0, 0, 160, 90);
         bx1.globalCompositeOperation = "copy"; bx1.imageSmoothingEnabled = true; bx1.drawImage(bl0, 0, 0, 80, 45);
-        bx2.globalCompositeOperation = "copy"; bx2.drawImage(bl1, 0, 0); bx2.globalCompositeOperation = "multiply"; bx2.drawImage(bl1, 0, 0); bx2.drawImage(bl1, 0, 0); bx2.drawImage(bl1, 0, 0);
+        bx2.globalCompositeOperation = "copy"; bx2.drawImage(bl1, 0, 0); bx2.globalCompositeOperation = "multiply"; for (let k = 0; k < BLOOM.n; k++) bx2.drawImage(bl1, 0, 0);
         bx3.globalCompositeOperation = "copy"; bx3.imageSmoothingEnabled = true; bx3.drawImage(bl2, 0, 0, 20, 12);
         ctx.save(); ctx.imageSmoothingEnabled = true; ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.55; ctx.drawImage(bl2, 0, 0, cv.width, cv.height);
-        ctx.globalAlpha = 0.45; ctx.drawImage(bl3, 0, 0, cv.width, cv.height);
+        ctx.globalAlpha = BLOOM.a0; ctx.drawImage(bl2, 0, 0, cv.width, cv.height);
+        ctx.globalAlpha = BLOOM.a1; ctx.drawImage(bl3, 0, 0, cv.width, cv.height);
         ctx.restore();
       }
       const inWorld = G.scene === "play" || G.scene === "end" || (G.scene === "cut" && G.sceneT >= 8);
