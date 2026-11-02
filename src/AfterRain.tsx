@@ -283,7 +283,7 @@ function drawFg(f: Ctx, cc: Caches): void {
       const span = W + 160; const sx = ((((p.x - cam) * 1.6) % span) + span) % span - 80;
       if (sx < -40 || sx > W + 40) continue; any = true;
       sc.save(); sc.translate(sx / 4, 47); sc.scale(0.4, 0.4);
-      drawPerson(sc, 0, 0, p.look, p.dir, g.t * 5 + p.seed, true);
+      drawPerson(sc, 0, 0, p.look, p.dir, (p.x * p.dir) / (strideK(p.sp / (p.look.h / 31)) * p.look.h / 31), true, p.sp / (p.look.h / 31));
       if (p.kind === "umb") umbrella(sc, p.dir * 2, -p.look.h - 2, 10, "#030507", "");
       sc.restore();
     }
@@ -348,37 +348,51 @@ function ground(c: Ctx, w: number, base: string): void {
 }
 
 const DLAMPS = [124, 470, 800, 1092, 1304];
+// apartment, scaled to Elias (31 px): desk 14, door 36, chair seat 8
 function bakeApt(c: Ctx): void {
   R(c, 0, 0, 360, FEET, "#15181b");
-  for (let x = 0; x < 360; x += 8) R(c, x, 10, 1, FEET - 10, "#191d21");
-  R(c, 0, 0, 360, 10, "#0a0b0d"); R(c, 0, 10, 360, 1, "#22282c");
-  c.clearRect(190, 30, 100, 90);
-  R(c, 186, 26, 108, 4, "#2a2420"); R(c, 184, 120, 112, 5, "#3a2e24"); R(c, 186, 26, 4, 96, "#2a2420"); R(c, 290, 26, 4, 96, "#2a2420");
-  R(c, 239, 30, 2, 90, "#2a2420"); R(c, 190, 74, 100, 2, "#2a2420");
-  vines(c, 190, 30, 100, 12, 3); plant(c, 194, 118, 22, 4); plant(c, 262, 118, 18, 5);
-  R(c, 172, 40, 1, 20, "#1a1a1a"); R(c, 166, 60, 12, 6, "#5a3424");
-  for (let k = 0; k < 12; k++) R(c, 166 + k, 66, 1, 4 + Math.floor(h1(k * 3.3) * 18), GREENS[k % 4] ?? "#245a32");
-  R(c, 14, 70, 44, 2, "#3a2a1c"); R(c, 14, 92, 44, 2, "#3a2a1c");
-  for (let k = 0; k < 10; k++) { R(c, 16 + k * 4, 61 + (k % 3), 3, 9 - (k % 3), ["#6a2a2a", "#2a4a5a", "#5a5a2a", "#3a2a4a"][k % 4] ?? "#444"); R(c, 16 + k * 4, 83 + (k % 2), 3, 9 - (k % 2), ["#2a4a3a", "#6a4a2a", "#3a3a5a"][k % 3] ?? "#444"); }
-  R(c, 22, 30, 26, 20, "#0c1012"); R(c, 24, 32, 22, 16, "#2a4a4a"); R(c, 24, 42, 22, 6, "#1a2a2a");
-  R(c, 50, 128, 96, 3, "#6a4428"); R(c, 50, 128, 96, 1, "#a87048"); R(c, 54, 131, 3, 29, "#3a2618"); R(c, 140, 131, 3, 29, "#3a2618");
-  R(c, 60, 131, 30, 10, "#3a2618"); R(c, 74, 135, 3, 1, "#c8a060");
-  R(c, 126, 100, 1, 28, "#2a2a2a"); R(c, 120, 98, 10, 3, "#3a3a3a"); R(c, 122, 126, 8, 2, "#3a3a3a");
-  R(c, 132, 106, 28, 20, "#20262a"); R(c, 134, 108, 24, 15, "#061210"); R(c, 144, 126, 4, 2, "#20262a");
-  R(c, 312, 66, 36, 94, "#2a1e16"); R(c, 316, 70, 28, 90, "#3a2a1e"); R(c, 338, 112, 3, 3, "#c8a060"); R(c, 322, 76, 16, 12, "#1a120c");
-  ptext(c, "EXIT", 322, 58, "#5dff9a", 1); glowRect(c, 322, 58, 15, 5, "#5dff9a", 0.5);
-  R(c, 260, 150, 1, 1, "#000");
+  for (let x = 0; x < 360; x += 8) R(c, x, 80, 1, FEET - 80, "#191d21");
+  R(c, 0, 0, 360, 78, "#0a0b0d"); R(c, 0, 78, 360, 2, "#22282c"); R(c, 0, 80, 360, 1, "#101315");
+  R(c, 0, 71, 360, 2, "#1c2226"); R(c, 0, 71, 360, 1, "#2a3238"); for (let x = 30; x < 360; x += 70) R(c, x, 70, 3, 4, "#2a3238");
+  R(c, 0, 152, 360, 8, "#121518"); R(c, 0, 152, 360, 1, "#1e2428");
+  // window
+  c.clearRect(196, 96, 80, 46);
+  R(c, 193, 93, 86, 3, "#2a2420"); R(c, 193, 93, 3, 50, "#2a2420"); R(c, 276, 93, 3, 50, "#2a2420");
+  R(c, 191, 142, 90, 3, "#3a2e24"); R(c, 191, 142, 90, 1, "#5a4634");
+  R(c, 235, 96, 2, 46, "#2a2420"); R(c, 196, 118, 80, 2, "#2a2420");
+  vines(c, 196, 96, 80, 9, 3); plant(c, 199, 141, 14, 4); plant(c, 262, 141, 12, 5);
+  // hanging plant
+  R(c, 172, 80, 1, 16, "#1a1a1a"); R(c, 168, 96, 9, 5, "#5a3424"); R(c, 168, 96, 9, 1, "#7a4a30");
+  for (let k = 0; k < 9; k++) R(c, 168 + k, 101, 1, 3 + Math.floor(h1(k * 3.3) * 11), GREENS[k % 4] ?? "#245a32");
+  // bed + shelf + picture
+  R(c, 22, 96, 18, 13, "#0c1012"); R(c, 23, 97, 16, 11, "#2a4a4a"); R(c, 23, 104, 16, 4, "#1a2a2a"); R(c, 27, 100, 3, 3, "#c8a060");
+  R(c, 6, 120, 46, 2, "#3a2a1c"); R(c, 6, 120, 46, 1, "#5a4028");
+  for (let k = 0; k < 9; k++) R(c, 8 + k * 4 + (k > 5 ? 3 : 0), 113 + (k % 3), 3, 7 - (k % 3), ["#6a2a2a", "#2a4a5a", "#5a5a2a", "#3a2a4a"][k % 4] ?? "#444");
+  R(c, 3, 138, 4, 22, "#3a2618"); R(c, 3, 138, 4, 1, "#5a3a22");
+  R(c, 7, 151, 48, 6, "#2a2030"); R(c, 7, 150, 48, 1, "#4a3a52"); R(c, 7, 149, 12, 3, "#c8c0b0"); R(c, 7, 149, 12, 1, "#e8e0d0");
+  R(c, 20, 150, 35, 5, "#3a2a48"); R(c, 20, 150, 35, 1, "#5a4a6a"); R(c, 7, 157, 48, 3, "#2a1a10"); R(c, 52, 148, 3, 12, "#3a2618");
+  // desk: top 146, legs to the floor, drawer unit at x70
+  R(c, 66, 146, 92, 2, "#6a4428"); R(c, 66, 146, 92, 1, "#a87048"); R(c, 67, 148, 2, 12, "#3a2618"); R(c, 155, 148, 2, 12, "#3a2618");
+  R(c, 70, 148, 16, 11, "#3a2618"); R(c, 70, 153, 16, 1, "#2a1a10"); R(c, 76, 150, 4, 1, "#c8a060"); R(c, 76, 156, 4, 1, "#8a6a40");
+  // lamp
+  R(c, 118, 144, 8, 2, "#3a3a3a"); R(c, 121, 137, 1, 7, "#2a2a2a"); R(c, 117, 134, 8, 3, "#3a3a3a"); R(c, 117, 134, 8, 1, "#4a4a4a");
+  // terminal
+  R(c, 136, 131, 22, 12, "#20262a"); R(c, 137, 132, 20, 10, "#061210"); R(c, 145, 143, 4, 3, "#20262a"); R(c, 138, 145, 14, 1, "#2a3034");
+  // door + EXIT
+  R(c, 322, 121, 24, 39, "#2a1e16"); R(c, 325, 124, 18, 36, "#3a2a1e"); R(c, 329, 128, 10, 8, "#2a1e14"); R(c, 329, 140, 10, 14, "#33251a"); R(c, 340, 142, 2, 2, "#c8a060");
+  ptext(c, "EXIT", 327, 114, "#5dff9a", 1); glowRect(c, 327, 114, 15, 5, "#5dff9a", 0.5);
   for (let row = 0, y = FEET; y < H; y += 3, row++) {
     R(c, 0, y, 360, 3, row % 2 === 0 ? "#2e2014" : "#24180e");
     for (let x = (row % 3) * 9; x < 360; x += 26) R(c, x, y, 1, 3, "#160e08");
   }
   R(c, 0, FEET, 360, 1, "#5a4028");
-  R(c, 200, 150, 60, 10, "#1a2228"); R(c, 196, 146, 68, 4, "#2a3640");
+  R(c, 200, 150, 60, 10, "#1a2228"); R(c, 196, 146, 68, 4, "#2a3640"); R(c, 196, 146, 68, 1, "#3a4a56");
 }
 function bakeDistrict(c: Ctx): void {
   bldg(c, 0, 132, 6, "#0b1219", 11, 100);
-  R(c, 28, 116, 28, 44, "#1a140e"); R(c, 30, 118, 24, 42, "#2a1e16"); R(c, 41, 118, 1, 42, "#1a140e"); R(c, 24, 112, 36, 4, "#22303a");
-  glow(c, 42, 120, 22, "255,170,90", 0.5);
+  R(c, 30, 122, 24, 38, "#1a140e"); R(c, 32, 124, 20, 36, "#2a1e16"); R(c, 41, 124, 1, 36, "#1a140e"); R(c, 34, 128, 5, 6, "#22180f"); R(c, 44, 128, 5, 6, "#22180f"); R(c, 39, 142, 1, 2, "#c8a060"); R(c, 43, 142, 1, 2, "#c8a060");
+  R(c, 26, 118, 32, 4, "#22303a"); R(c, 26, 118, 32, 1, "#3a4a56");
+  glow(c, 42, 126, 20, "255,170,90", 0.5);
   ptext(c, "KESSLER ST", 66, 108, "#8fa8b0", 1);
   bldg(c, 132, 272, 18, "#0d141c", 21, 84);
   R(c, 142, 102, 120, 58, "#1c0f0a");
@@ -474,8 +488,8 @@ function bakeMarketBack(c: Ctx): void {
 }
 
 type Look = { coat: string; hair: string; skin: string; accent: string; rim: string; h: number; extra: string; b?: string; cl?: number; hs?: string; sh?: string; pa?: string; shoe?: string; open?: boolean; cool?: string };
-type Pose = { lean: number; hx: number; lift: number; t0: number; k0: number; f0: number; t1: number; k1: number; f1: number; s0: number; e0: number; s1: number; e1: number; tilt: number; sway: number; br: number; fix: number };
-type Joints = { hx: number; hy: number; fx: number; fy: number; ex: number; ey: number; top: number; sx: number; sy: number };
+type Pose = { lean: number; hx: number; lift: number; t0: number; k0: number; f0: number; t1: number; k1: number; f1: number; s0: number; e0: number; s1: number; e1: number; tilt: number; sway: number; br: number; fix: number; ik: number; ax0: number; ay0: number; ax1: number; ay1: number; sr: number; hl: number; hr: number; sq: number };
+type Joints = { hx: number; hy: number; fx: number; fy: number; ex: number; ey: number; top: number; sx: number; sy: number; foot: number };
 type Pal = { coatD: string; coatH: string; coatF: string; paD: string; skinD: string; hairH: string; sh: string; pa: string; shoe: string; cool: string; warm: string };
 const PALS = new WeakMap<Look, Pal>();
 const BODY: Record<string, number[]> = { m: [1.5, 1.45, 1.15, 1.35, 1, 1, 0], f: [1.3, 1.2, 0.95, 1.4, 0.85, 0.97, 0], broad: [1.85, 1.75, 1.6, 1.5, 1.2, 1.04, 0], thin: [1.3, 1.2, 0.95, 1.1, 0.85, 0.97, 0], kid: [1.35, 1.25, 1.1, 1.25, 0.95, 1.28, 0], old: [1.4, 1.5, 1.2, 1.35, 0.95, 1, 0.16] };
@@ -486,26 +500,54 @@ function palOf(L: Look): Pal {
   const p: Pal = { coatD: mixHex(L.coat, "#04060a", 0.42), coatH: mixHex(L.coat, "#c8e0e0", 0.13), coatF: mixHex(L.coat, "#04060a", 0.22), paD: mixHex(pa, "#020304", 0.45), skinD: mixHex(L.skin, "#2a1830", 0.38), hairH: mixHex(L.hair, "#ffd0a0", 0.18), sh, pa, shoe: L.shoe ?? "#07080a", cool: mixHex(L.cool ?? mixHex(L.coat, "#4ab8c0", 0.55), L.coat, 0.4), warm: L.rim ? mixHex(L.rim, L.coat, 0.3) : mixHex(L.coat, "#c08050", 0.45) };
   PALS.set(L, p); return p;
 }
-function pose0(): Pose { return { lean: 0.03, hx: 0, lift: 0, t0: 0.05, k0: 0.08, f0: 0, t1: -0.05, k1: 0.1, f1: 0, s0: 0.06, e0: 0.18, s1: -0.05, e1: 0.22, tilt: 0, sway: 0, br: 0, fix: 0 }; }
+function pose0(): Pose { return { lean: 0.03, hx: 0, lift: 0, t0: 0.05, k0: 0.08, f0: 0, t1: -0.05, k1: 0.1, f1: 0, s0: 0.06, e0: 0.18, s1: -0.05, e1: 0.22, tilt: 0, sway: 0, br: 0, fix: 0, ik: 0, ax0: 0, ay0: 0, ax1: 0, ay1: 0, sr: 0, hl: 0, hr: 0, sq: 1 }; }
 function q(v: number, n: number): number { return Math.floor((((v % 1) + 1) % 1) * n) / n; }
-function gait(p: number, run: boolean, k: number): Pose {
-  const P = pose0(); const T = Math.PI * 2;
-  const leg = (u: number): number[] => {
-    const s = Math.sin(T * u); const c = Math.cos(T * u);
-    if (run) return [0.12 + 0.74 * s, 0.25 + 1.6 * Math.pow(Math.max(0, Math.cos(T * (u + 0.12))), 1.3), -0.55 * Math.max(0, c)];
-    return [0.5 * s * k, 0.1 + 0.85 * k * Math.pow(Math.max(0, Math.cos(T * (u + 0.1))), 2) + 0.08 * Math.max(0, s), -0.35 * Math.max(0, c)];
-  };
-  const a = leg(p); const b = leg(p + 0.5);
-  P.t0 = a[0] ?? 0; P.k0 = a[1] ?? 0; P.f0 = a[2] ?? 0; P.t1 = b[0] ?? 0; P.k1 = b[1] ?? 0; P.f1 = b[2] ?? 0;
-  const s = Math.sin(T * p);
-  if (run) { P.s0 = -0.85 * s; P.s1 = 0.85 * s; P.e0 = 1.45 + 0.25 * Math.max(0, -s); P.e1 = 1.45 + 0.25 * Math.max(0, s); P.lean = 0.24; P.lift = 0.9 * Math.max(0, Math.sin(T * 2 * p - 0.5)); P.sway = 2.2 + 0.6 * Math.sin(T * 2 * p); }
-  else { P.s0 = -0.42 * k * s; P.s1 = 0.42 * k * s; P.e0 = 0.2 + 0.45 * Math.max(0, -s) * k; P.e1 = 0.2 + 0.45 * Math.max(0, s) * k; P.lean = 0.07; P.sway = 0.7 + 0.5 * Math.sin(T * 2 * p + 0.8); }
-  return P;
-}
 function idleP(t: number, sd: number): Pose {
   const P = pose0(); const w = Math.sin(t * 0.45 + sd); const br = Math.sin(t * 1.7 + sd) * 0.5 + 0.5;
   P.br = br; P.hx = 0.35 * w; P.t0 = 0.05 + 0.05 * w; P.k0 = 0.06 + Math.max(0, -w) * 0.22; P.t1 = -0.05 + 0.05 * w; P.k1 = 0.06 + Math.max(0, w) * 0.22;
   P.s0 = 0.06 + 0.03 * br; P.s1 = -0.05 - 0.02 * br; P.sway = 0.15 * w;
+  return P;
+}
+// stride length (in body units, k=1) for a speed given in body units per second
+function strideK(v: number): number { return clamp(14 + 0.21 * v, 16, 40); }
+function sstep(u: number): number { const v = clamp(u, 0, 1); return v * v * (3 - 2 * v); }
+// procedural IK gait: feet are planted targets (no sliding), hip bob / arms / shoulders derive from the same phase
+function gaitIK(p: number, w: number, r: number, D: number, t: number, sd: number): Pose {
+  const P = idleP(t, sd); const T = Math.PI * 2;
+  P.ik = 1;
+  const beta = 0.58 - 0.22 * r; const Ls = D * beta;
+  const lift = 2.0 + 3.6 * r; const strike = 0.3 * (1 - 0.7 * r); const off = -0.8;
+  const foot = (u0: number): number[] => {
+    const u = ((u0 % 1) + 1) % 1;
+    if (u < beta) {
+      const s = u / beta; const x = Ls * (0.5 - s);
+      const fa = s < 0.2 ? strike * (1 - s / 0.2) : s > 0.6 ? off * sstep((s - 0.6) / 0.4) : 0;
+      return [x, 1.19 + (fa < 0 ? -Math.sin(fa) * 1.7 : 0), fa, 0];
+    }
+    const s = (u - beta) / (1 - beta); const e = sstep(s);
+    const hg = lift * Math.sin(Math.PI * Math.pow(s, 1 - 0.35 * r));
+    const x = Ls * (-0.5 + e) + r * 1.2 * Math.sin(Math.PI * s);
+    return [x, 1.19 + -Math.sin(off) * 1.7 * (1 - sstep(s * 2.5)) + hg, off + (strike - off) * e, hg];
+  };
+  const a = foot(p); const b = foot(p + 0.5);
+  const iw = 1 - w;
+  P.ax0 = 1.0 * iw + (a[0] ?? 0) * w; P.ay0 = 1.19 * iw + (a[1] ?? 1.19) * w; P.f0 = (a[2] ?? 0) * w;
+  P.ax1 = -1.1 * iw + (b[0] ?? 0) * w; P.ay1 = 1.19 * iw + (b[1] ?? 1.19) * w; P.f1 = (b[2] ?? 0) * w;
+  const bobW = 13.9 - 0.5 * Math.cos(T * 2 * p);
+  const bobR = 13.5 - 1.1 * Math.cos(T * 2 * (p - beta / 2));
+  const hip = bobW * (1 - r) + bobR * r;
+  P.fix = (15.15 + P.br * 0.12) * iw + hip * w;
+  P.lift = r * w * Math.max(0, Math.min(a[3] ?? 0, b[3] ?? 0));
+  P.hl = -(hip - (13.9 * (1 - r) + 13.5 * r)) * 0.45 * w;
+  const amp = 0.48 + 0.5 * r; const ac = -Math.cos(T * (p - 0.04));
+  const s0 = amp * ac; const s1 = -amp * ac;
+  const eb = 0.22 + 1.3 * r;
+  P.s0 = P.s0 * iw + s0 * w; P.s1 = P.s1 * iw + s1 * w;
+  P.e0 = P.e0 * iw + (eb + (0.4 + 0.2 * r) * Math.max(0, ac)) * w; P.e1 = P.e1 * iw + (eb + (0.4 + 0.2 * r) * Math.max(0, -ac)) * w;
+  P.sr = s0 * 0.7 * w;
+  P.hx *= iw;
+  P.sway = P.sway * iw + (0.6 + 0.35 * Math.sin(T * 2 * p + 0.8) + 1.5 * r) * w;
+  P.lean = 0.03 + (0.04 + 0.16 * r) * w;
   return P;
 }
 function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims: boolean): Joints {
@@ -515,8 +557,9 @@ function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims:
   const lw = bt[4] ?? 1; const lean = P.lean + (bt[6] ?? 0);
   const wd = 1.22; const g = PG; const qq = (v: number): number => Math.round(v / g) * g;
   let ox = 0; let mono = "";
+  const sq = P.sq; const xs = 1 + (1 - sq) * 0.6;
   const F = (lx: number, ly: number, w: number, h: number, col: string): void => {
-    const x0 = qq(f > 0 ? lx : -lx - w); const x1 = qq(f > 0 ? lx + w : -lx); const y0 = qq(-ly - h); const y1 = qq(-ly);
+    const x0 = qq((f > 0 ? lx : -lx - w) * xs); const x1 = qq((f > 0 ? lx + w : -lx) * xs); const y0 = qq((-ly - h) * sq); const y1 = qq(-ly * sq);
     c.fillStyle = mono || col; c.fillRect(X + x0 + ox, Y + y0, Math.max(g, x1 - x0), Math.max(g, y1 - y0));
   };
   const seg = (x1: number, y1: number, x2: number, y2: number, w1: number, w2: number, col: string): void => {
@@ -525,20 +568,37 @@ function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims:
   };
   const TH = 7.4 * k * (kid ? 0.92 : 1); const SH = 7.0 * k * (kid ? 0.92 : 1); const AN = 0.9 * k; const FT = 2.4 * k * lw;
   const legEnd = (ta: number, kb: number): number[] => { const kx = Math.sin(ta) * TH; const ky = -Math.cos(ta) * TH; const sa = ta - kb; return [kx, ky, kx + Math.sin(sa) * SH, ky - Math.cos(sa) * SH]; };
-  const A = legEnd(P.t0, P.k0); const B = legEnd(P.t1, P.k1);
-  const sole = (e: number[], fa: number): number => Math.min((e[3] ?? 0) - AN, (e[3] ?? 0) - AN * 0.3 + Math.sin(fa) * FT);
-  const hipY = P.fix > 0 ? P.fix * k : -Math.min(sole(A, P.f0), sole(B, P.f1)) + P.lift * k;
+  // two-bone IK: knee always bends forward, reach clamped just short of full extension
+  const ikLeg = (tx: number, ty: number): number[] => {
+    let dx = tx; let dy = ty; let d = Math.hypot(dx, dy); const mx = (TH + SH) * 0.999;
+    if (d > mx) { dx *= mx / d; dy *= mx / d; d = mx; }
+    d = Math.max(d, Math.abs(TH - SH) + 0.05);
+    const ta = Math.atan2(dx, -dy) + Math.acos(clamp((TH * TH + d * d - SH * SH) / (2 * TH * d), -1, 1));
+    const kx = Math.sin(ta) * TH; const ky = -Math.cos(ta) * TH; return [kx, ky, dx, dy];
+  };
+  // lowest drawn pixel of the foot (heel block or toe tip) relative to the hip
+  const sole = (e: number[], fa: number): number => Math.min((e[3] ?? 0) - 1.19 * k, (e[3] ?? 0) - 1.04 * k + Math.sin(fa) * FT);
   const hx = P.hx * k;
+  let A: number[]; let B: number[]; let hipY: number;
+  if (P.ik > 0) {
+    const h0 = P.fix * k;
+    A = ikLeg(P.ax0 * k - hx, P.ay0 * k - h0); B = ikLeg(P.ax1 * k - hx, P.ay1 * k - h0);
+    hipY = P.lift * k - Math.min(sole(A, P.f0), sole(B, P.f1));
+  } else {
+    A = legEnd(P.t0, P.k0); B = legEnd(P.t1, P.k1);
+    hipY = P.fix > 0 ? P.fix * k : -Math.min(sole(A, P.f0), sole(B, P.f1)) + P.lift * k;
+  }
   const TR = 9.6 * k * (kid ? 0.82 : 1);
   const shx = hx + Math.sin(lean) * TR; const shy = hipY + Math.cos(lean) * TR + P.br * 0.3 * k;
   const cl = L.cl ?? 1; const UA = 5.4 * k * (kid ? 0.88 : 1); const FA = 5.0 * k * (kid ? 0.88 : 1);
   const hs = L.hs ?? "short";
   const hw = 3.5 * k * hsc; const hh = 4.4 * k * hsc;
-  const hcx = shx + 0.35 * k + Math.sin(lean) * 1.0 * k + P.tilt * 1.3 * k; const hcy = shy + 0.7 * k + hh / 2 - Math.abs(P.tilt) * 0.9 * k;
+  const hlag = clamp(P.hl, -0.9, 0.3);
+  const hcx = shx + 0.35 * k + Math.sin(lean) * 1.0 * k + P.tilt * 1.3 * k; const hcy = shy + 0.7 * k + hh / 2 - Math.abs(P.tilt) * 0.9 * k + hlag * k;
   const ht = hcy + hh / 2; const hb = hcy - hh / 2; const hf = hcx + hw / 2; const hbk = hcx - hw / 2;
   const asx = shx - 0.25 * k; const asy = shy - 0.9 * k;
-  const arm = (sa: number, ea: number): number[] => { const ex = asx + Math.sin(sa) * UA; const ey = asy - Math.cos(sa) * UA; const fa = sa + ea; return [ex, ey, ex + Math.sin(fa) * FA, ey - Math.cos(fa) * FA]; };
-  const AR0 = arm(P.s0 + lean * 0.5, P.e0); const AR1 = arm(P.s1 + lean * 0.5, P.e1);
+  const arm = (sa: number, ea: number, so: number): number[] => { const ex = asx + so + Math.sin(sa) * UA; const ey = asy - Math.cos(sa) * UA; const fa = sa + ea; return [ex, ey, ex + Math.sin(fa) * FA, ey - Math.cos(fa) * FA, asx + so]; };
+  const AR0 = arm(P.s0 + lean * 0.5, P.e0, P.sr * 0.55 * k); const AR1 = arm(P.s1 + lean * 0.5, P.e1, -P.sr * 0.55 * k);
   const cx = (ly: number): number => hx + (ly - hipY) * Math.tan(lean);
   const legD = (e: number[], fa: number, col: string, colS: string): void => {
     const kx = hx + (e[0] ?? 0); const ky = hipY + (e[1] ?? 0); const ax = hx + (e[2] ?? 0); const ay = hipY + (e[3] ?? 0);
@@ -549,7 +609,7 @@ function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims:
   };
   const armD = (e: number[], col: string, sk: string): void => {
     const ex = e[0] ?? 0; const ey = e[1] ?? 0; const wx = e[2] ?? 0; const wy = e[3] ?? 0;
-    seg(asx, asy, ex, ey, 1.7 * k * lw, 1.4 * k * lw, col); seg(ex, ey, wx, wy, 1.4 * k * lw, 1.15 * k * lw, col);
+    seg(e[4] ?? asx, asy, ex, ey, 1.7 * k * lw, 1.4 * k * lw, col); seg(ex, ey, wx, wy, 1.4 * k * lw, 1.15 * k * lw, col);
     F(wx - 0.5 * k, wy - 0.9 * k, 1.0 * k, 1.1 * k, sk);
   };
   const sleeve = cl === 0 && !L.open ? L.coat : L.coat;
@@ -559,7 +619,7 @@ function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims:
     if (cl < 3) legD(B, P.f1, pal.paD, pal.shoe);
     if (hasX(L, "pack")) { F(shx - 3.6 * k, shy - 6.8 * k, 3.0 * k, 6.4 * k, "#2a2622"); F(shx - 3.4 * k, shy - 6.2 * k, 2.4 * k, 0.6 * k, L.accent); F(shx - 3.8 * k, shy - 6.9 * k, 3.4 * k, 0.6 * k, "#14120f"); }
     if (hasX(L, "bag")) F(shx - 2.6 * k, shy - 5.6 * k, 1.6 * k, 4.2 * k, "#2e2418");
-    if (hs === "long" || hs === "pig") F(hbk - 0.4 * k, shy - 2.6 * k, 1.9 * k, hh * 0.6 + 2.4 * k, L.hair);
+    if (hs === "long" || hs === "pig") F(hbk - 0.4 * k - P.hr * 0.8 * k, shy - 2.6 * k, 1.9 * k, hh * 0.6 + 2.4 * k, L.hair);
     for (let ly = hipY - 1.2 * k; ly < shy + 0.1; ly += g) {
       const s = clamp((ly - hipY) / (shy - hipY), 0, 1); const c0 = cx(ly);
       const fr = (s < 0.4 ? 1.25 : 1.25 + (s - 0.4) * 0.6) * k * wd * (bt[2] ?? 1) / 1.15 + (s > 0.5 ? P.br * 0.18 * k : 0);
@@ -591,7 +651,7 @@ function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims:
     if (hasX(L, "collar") || hasX(L, "shawl")) { F(cx(shy) - 1.5 * k, shy - 0.4 * k, 1.8 * k, 1.6 * k, hasX(L, "shawl") ? L.accent : pal.coatH); }
     if (hasX(L, "shawl")) for (let ly = shy - 3.6 * k; ly < shy + 0.2 * k; ly += g) { const u = (shy - ly) / (3.6 * k); F(cx(ly) - 1.9 * k, ly, 3.6 * k + u * 0.2 * k, g, u > 0.8 ? mixHex(L.accent, "#000", 0.3) : L.accent); }
     // neck + head
-    F(shx - 0.4 * k, shy - 0.3 * k, 1.1 * k, 1.3 * k, pal.skinD);
+    F(shx - 0.4 * k, shy - 0.3 * k, 1.1 * k, 1.3 * k + Math.max(0, hlag) * k, pal.skinD);
     if (hs === "hood") { F(hbk - 0.7 * k, hb - 0.5 * k, hw + 1.0 * k, hh + 1.3 * k, L.coat); F(hbk - 0.7 * k, hb - 0.5 * k, 0.8 * k, hh, pal.coatD); }
     for (let ly = hb; ly < ht; ly += g) {
       const r = (ly - hb) / hh;
@@ -620,7 +680,7 @@ function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims:
       F(hbk - 0.2 * k, ht - 0.9 * k, hw + 0.1 * k, thick * k + 0.6 * k, hc);
       F(hbk - 0.35 * k, hcy - (hs === "long" || hs === "bob" ? 1.6 : 0.3) * k, 1.4 * k, ht - hcy + (hs === "long" || hs === "bob" ? 1.0 : 0) * k, hc);
       if (hs !== "buzz") F(hbk + 0.6 * k, ht + thick * k - 0.6 * k, hw * 0.55, 0.5 * k, hl);
-      if (hs === "tousle") { F(hf - 1.4 * k, ht - 1.5 * k, 1.3 * k, 0.9 * k, hc); F(hf - 0.6 * k, ht - 1.9 * k, 0.6 * k, 1.1 * k, hc); F(hbk + 0.3 * k, ht + 0.5 * k, 0.7 * k, 0.6 * k, hc); F(hbk + 1.6 * k, ht + 0.6 * k, 0.7 * k, 0.5 * k, hc); F(hcx + 0.6 * k, ht + 0.45 * k, 0.6 * k, 0.5 * k, hl); F(hbk - 0.6 * k, hcy + 0.4 * k, 0.6 * k, 1.0 * k, hc); }
+      if (hs === "tousle") { F(hf - 1.4 * k, ht - 1.5 * k, 1.3 * k, 0.9 * k, hc); F(hf - 0.6 * k, ht - 1.9 * k, 0.6 * k, 1.1 * k, hc); F(hbk + 0.3 * k, ht + 0.5 * k, 0.7 * k, 0.6 * k, hc); F(hbk + 1.6 * k, ht + 0.6 * k, 0.7 * k, 0.5 * k, hc); F(hcx + 0.6 * k, ht + 0.45 * k, 0.6 * k, 0.5 * k, hl); F(hbk - 0.6 * k - P.hr * 0.6 * k, hcy + 0.4 * k, 0.6 * k, 1.0 * k, hc); if (P.hr > 0.25) F(hbk - 0.5 * k - P.hr * k, ht - 0.6 * k, 0.5 * k + P.hr * 0.6 * k, 0.6 * k, hc); }
       if (hs === "spiky") for (let i = 0; i < 4; i++) F(hbk + i * 0.95 * k, ht + 0.2 * k, 0.6 * k, (1.0 + (i % 2) * 0.6) * k, hc);
       if (hs === "bob") { F(hf - 1.3 * k, ht - 1.6 * k, 1.1 * k, 1.0 * k, hc); F(hbk - 0.5 * k, hb + 0.2 * k, 1.2 * k, hh * 0.6, hc); }
       if (hs === "bun") { F(hbk - 1.0 * k, ht - 1.0 * k, 1.5 * k, 1.5 * k, hc); F(hbk - 0.8 * k, ht - 0.2 * k, 0.6 * k, 0.6 * k, hl); }
@@ -641,16 +701,28 @@ function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims:
     ox = 0; mono = "";
   }
   body();
-  const S = (lx: number, ly: number): number[] => [X + f * lx, Y - ly];
+  const S = (lx: number, ly: number): number[] => [X + f * lx * xs, Y - ly * sq];
   const h0 = S(AR0[2] ?? 0, AR0[3] ?? 0); const h1v = S(AR1[2] ?? 0, AR1[3] ?? 0); const ee = S(hf - 1.0 * k, hcy + 0.1 * k); const sh0 = S(shx, shy);
-  return { hx: h0[0] ?? X, hy: h0[1] ?? Y, fx: h1v[0] ?? X, fy: h1v[1] ?? Y, ex: ee[0] ?? X, ey: ee[1] ?? Y, top: Y - ht - k, sx: sh0[0] ?? X, sy: sh0[1] ?? Y };
+  const low = hipY + Math.min(sole(A, P.f0), sole(B, P.f1));
+  return { hx: h0[0] ?? X, hy: h0[1] ?? Y, fx: h1v[0] ?? X, fy: h1v[1] ?? Y, ex: ee[0] ?? X, ey: ee[1] ?? Y, top: Y - ht * sq - k, sx: sh0[0] ?? X, sy: sh0[1] ?? Y, foot: Y + qq(-low * sq) };
 }
-function drawPerson(c: Ctx, x: number, y: number, L: Look, f: number, ph: number, moving: boolean): void {
-  const P = moving ? gait(q(ph / (Math.PI * 2), 12), false, 1) : idleP(G.t, ph + L.h);
+function drawPerson(c: Ctx, x: number, y: number, L: Look, f: number, ph: number, moving: boolean, v: number): void {
+  const P = moving ? gaitIK(q(ph, 16), 1, 0, strideK(v), 0, L.h) : idleP(G.t, ph + L.h);
   figure(c, x, y, L, f, P, G.gfx > 0);
 }
+// soft contact shadow under a character's feet (ground row y)
+function shade(b: Ctx, x: number, y: number, w: number, a: number): void {
+  const X = Math.round(x); const hw = Math.max(2, Math.round(w / 2)); const ga = b.globalAlpha;
+  b.globalAlpha = ga * a;
+  b.fillStyle = "rgba(0,0,0,0.16)"; b.fillRect(X - hw - 2, y - 1, hw * 2 + 4, 3);
+  b.fillStyle = "rgba(0,0,0,0.3)"; b.fillRect(X - hw, y - 1, hw * 2, 2);
+  b.fillStyle = "rgba(0,0,0,0.28)"; b.fillRect(X - hw + 1, y, hw * 2 - 2, 1);
+  b.globalAlpha = ga;
+}
+// debug: when set, every drawn character logs [footY, groundY, airborne]
+const DBG: { foot: number[][] | null } = { foot: null };
 function npcPose(n: Npc, moving: boolean, t: number): Pose {
-  if (moving) return gait(q(t * n.speed * 0.055 + n.x0 * 0.01, 12), false, n.id === "ines" ? 0.6 : 1);
+  if (moving) { const k = n.look.h / 31; const D = strideK(n.speed / k); return gaitIK((n.x * n.dir) / (D * k) + n.x0 * 0.013, 1, 0, D, t, n.x0); }
   const P = idleP(t, n.x0);
   const id = n.idle;
   if (id === "stir") { const a = Math.sin(t * 3); P.s0 = 0.9 + 0.1 * a; P.e0 = 0.9; P.s1 = 0.7; P.e1 = 0.8; P.lean = 0.1; }
@@ -663,49 +735,111 @@ function npcPose(n: Npc, moving: boolean, t: number): Pose {
   return P;
 }
 const ELOOK: Look = { coat: "#1a1f29", hair: "#2c1c14", skin: "#d6a88c", accent: "#a8a48e", rim: "#ffb466", h: 31, extra: "collar stubble", b: "m", cl: 2, hs: "tousle", sh: "#a6a28a", pa: "#13151b", shoe: "#060607", open: true, cool: "#5fd8d0" };
+// Elias's procedural animation state (module level, never saved)
+const EA = { ph: 0, spd: 0, w: 0, r: 0, lean: 0.03, pvx: 0, sway: 0, swayV: 0, hr: 0, hrV: 0, hl: 0, hlV: 0, dip: 0, dipV: 0, turn: 0, f: 1, pre: 0 };
+const PRE = 0.06; const TURN = 0.13;
+function animTick(dt: number): void {
+  const g = G; const a = EA; const v = Math.abs(g.vx); const gr = g.grounded;
+  if (dt <= 0) return;
+  a.spd += (v - a.spd) * Math.min(1, dt * 12);
+  a.w += ((gr ? clamp((a.spd - 3) / 24, 0, 1) : a.w) - a.w) * Math.min(1, dt * 10);
+  a.r += ((gr ? clamp((a.spd - 64) / 34, 0, 1) : a.r) - a.r) * Math.min(1, dt * 6);
+  if (gr && a.w > 0.02) {
+    const prev = a.ph; a.ph += a.spd * dt / strideK(Math.max(a.spd, 1));
+    if (Math.floor(prev * 2) !== Math.floor(a.ph * 2) && a.w > 0.35) { step(); if (a.spd > 80) puff(g.px - g.facing * 3, g.py, 1); }
+  } else if (gr) a.ph = Math.round(a.ph * 2) / 2;
+  g.walk = a.ph * Math.PI * 2;
+  const acc = clamp(((g.vx - a.pvx) / dt) * g.facing / 600, -1, 1); a.pvx = g.vx;
+  const lt = gr ? 0.02 + 0.05 * a.w + 0.15 * a.r + acc * 0.09 : 0.07;
+  a.lean += (lt - a.lean) * Math.min(1, dt * 7);
+  if (g.facing !== a.f) { a.f = g.facing; a.turn = TURN; a.swayV -= 16; a.hrV -= 7; }
+  a.turn = Math.max(0, a.turn - dt);
+  const sw = 0.2 + 0.8 * a.w + 1.4 * a.r - acc * 0.7 + (gr ? 0 : clamp(g.vy / 180, -1, 1) * -0.9);
+  a.swayV += ((sw - a.sway) * 75 - a.swayV * 7) * dt; a.sway += a.swayV * dt;
+  const ht = 0.1 + 0.45 * a.w + 0.6 * a.r + (gr ? 0 : 0.3);
+  a.hrV += ((ht - a.hr) * 120 - a.hrV * 9) * dt; a.hr += a.hrV * dt;
+  a.hlV += (-a.hl * 160 - a.hlV * 13) * dt; a.hl = clamp(a.hl + a.hlV * dt, -1.2, 0.4);
+  a.dipV += (-a.dip * 170 - a.dipV * 19) * dt; a.dip = clamp(a.dip + a.dipV * dt, -0.3, 1.3);
+}
+// landing: knees absorb the impact, head and coat follow through
+function animLand(fallV: number): void { const s = clamp(fallV / 180, 0.35, 1.6); EA.dipV += 13 * s; EA.hlV -= 4 * s; EA.swayV -= 10 * s; }
+function airPose(): Pose {
+  const g = G; const P = pose0(); const u = sstep((g.vy + 182) / 364);
+  // keyframes: launch stretch -> apex tuck -> reach for the ground
+  const K = [[0.55, 0.9, -0.35, 0.25, -0.4, -0.9, 1.3, 0.5, -0.7, 0.4, 16.2, 1.05, 0.06], [1.0, 1.5, 0.25, 1.2, -0.3, -0.4, 0.8, 1.0, 0.2, 0.8, 15.3, 1.0, 0.1], [0.5, 0.6, 0.05, 0.45, 0.1, -0.2, 1.4, 0.6, 0.9, 0.5, 15.8, 1.03, 0.04]];
+  const lo = u < 0.5 ? K[0] : K[1]; const hi = u < 0.5 ? K[1] : K[2]; const e = u < 0.5 ? u * 2 : (u - 0.5) * 2;
+  const v = (i: number): number => ((lo?.[i] ?? 0) * (1 - e) + (hi?.[i] ?? 0) * e);
+  const sp = EA.r * 0.3;
+  P.t0 = v(0) + sp; P.k0 = v(1); P.t1 = v(2) - sp; P.k1 = v(3); P.f0 = v(4); P.f1 = v(5); P.s0 = v(6); P.e0 = v(7); P.s1 = v(8); P.e1 = v(9); P.fix = v(10); P.sq = v(11); P.lean = v(12) + EA.r * 0.08;
+  P.sr = (P.s0 - P.s1) * 0.2;
+  return P;
+}
+function eliasLoco(t: number): Pose {
+  const g = G; const a = EA;
+  const P = g.grounded ? gaitIK(a.ph, a.w, a.r, strideK(Math.max(a.spd, 1)), t, 0) : airPose();
+  if (g.grounded) {
+    const pre = a.pre > 0 ? Math.sin((1 - a.pre / PRE) * Math.PI * 0.5) : 0;
+    const c = clamp(a.dip, -0.2, 1.2) + pre * 0.9;
+    P.fix -= c * 2.4; P.lean = a.lean + Math.max(0, c) * 0.16; P.s0 += c * 0.35; P.s1 -= c * 0.3; P.e0 += c * 0.25;
+    P.sq = 1 - clamp(c, -0.3, 1) * 0.07;
+    if (a.w < 0.1 && Math.sin(t * 0.23) > 0.85) P.tilt = -0.18;
+  } else P.lean += a.lean * 0.3;
+  P.sway = a.sway + (g.grounded ? 0.35 * Math.sin(Math.PI * 4 * a.ph + 0.8) * a.w : 0);
+  P.hr = a.hr; P.hl += a.hl;
+  if (a.turn > 0) {
+    const u = a.turn / TURN;
+    P.s0 *= 1 - u; P.s1 *= 1 - u; P.sr *= 1 - u; P.lean -= 0.1 * u; P.hx -= 0.5 * u;
+    if (P.ik > 0) { P.ax0 *= 1 - 0.4 * u; P.ax1 *= 1 - 0.4 * u; }
+  }
+  return P;
+}
 function eliasPose(st: string, ph: number, t: number): Pose {
   const g = G;
-  if (st === "walk") return gait(q(ph / (Math.PI * 2), 12), false, clamp(Math.abs(g.vx) / 58, 0.55, 1));
-  if (st === "run") return gait(q(ph / (Math.PI * 2), 10), true, 1);
-  if (st === "jump") {
-    const u = Math.round(clamp((g.vy + 180) / 360, 0, 1) * 6) / 6; const P = pose0();
-    P.t0 = 1.0 - 0.75 * u; P.k0 = 1.5 - 1.1 * u; P.t1 = 0.15 - 0.3 * u; P.k1 = 1.0 - 0.6 * u; P.f0 = -0.5; P.f1 = -0.6;
-    P.s0 = 0.75 - 0.55 * u; P.e0 = 1.3 - 0.4 * u; P.s1 = -0.6 + 0.9 * u; P.e1 = 0.9; P.lean = 0.12; P.sway = -1.2 + 2.6 * u; P.fix = 15.6 - 1.2 * (1 - u);
-    return P;
-  }
-  if (st === "land") { const cc = Math.ceil(clamp(g.landT / 0.15, 0, 1) * 4) / 4; const P = pose0(); P.t0 = 0.85 * cc + 0.05; P.k0 = 1.6 * cc + 0.08; P.t1 = 0.55 * cc - 0.05; P.k1 = 1.3 * cc + 0.1; P.lean = 0.3 * cc + 0.03; P.s0 = 0.5 * cc; P.e0 = 0.4; P.s1 = -0.3 * cc; P.sway = -0.8 * cc; return P; }
   if (st === "interact") { const u = 1 - clamp(g.actT / 0.4, 0, 1); const r = Math.round(Math.sin(Math.PI * Math.min(1, u * 1.4)) * 6) / 6; const P = idleP(t, 0); P.s0 = 0.15 + 1.3 * r; P.e0 = 0.6 * (1 - r) + 0.08; P.lean = 0.04 + 0.08 * r; P.t0 = 0.05 + 0.25 * r; P.k0 = 0.15 + 0.2 * r; P.t1 = -0.12 * r; P.hx = 0.6 * r; return P; }
   if (st === "examine") { const u = 1 - clamp(g.actT / 0.5, 0, 1); const d = Math.round(Math.sin(Math.PI * Math.min(1, u * 1.25)) * 6) / 6; const P = idleP(t, 0); P.t0 = 0.75 * d + 0.05; P.k0 = 1.25 * d + 0.06; P.t1 = 0.25 * d - 0.05; P.k1 = 1.1 * d + 0.06; P.lean = 0.38 * d + 0.03; P.tilt = 0.45 * d; P.s0 = 0.06 + 0.75 * d; P.e0 = 0.2 + 0.7 * d; P.s1 = 0.3 * d; P.e1 = 1.4 * d + 0.2; return P; }
-  const P = idleP(t, 0); if (Math.sin(t * 0.23) > 0.85) P.tilt = -0.18; return P;
+  return eliasLoco(t + ph * 0);
 }
+function groundUnder(x: number, y: number): number { let gy = FEET; for (const p of PLATS[G.loc]) if (x >= p.x0 && x <= p.x1 && p.y >= y - 0.01 && p.y < gy) gy = p.y; return gy; }
 function drawElias(c: Ctx, x: number, y: number, f: number, st: string, ph: number, t: number): void {
-  figure(c, x, y, ELOOK, f, eliasPose(st, ph, t), true);
+  const gy = groundUnder(G.px, y); const air = clamp((gy - y) / 40, 0, 0.75);
+  shade(c, x, gy, 11 * (1 - air), 1 - air);
+  const P = eliasPose(st, ph, t);
+  const j = figure(c, x, y, ELOOK, f, P, true);
+  if (DBG.foot) DBG.foot.push([j.foot, y, !G.grounded || P.lift > 0.01 ? 1 : 0]);
+}
+function drawChair(c: Ctx, x: number, y: number): void {
+  const X = Math.round(x); const Y = Math.round(y);
+  R(c, X - 8, Y - 21, 2, 14, "#3a2a1c"); R(c, X - 7, Y - 21, 1, 13, "#4a3624"); R(c, X - 9, Y - 21, 4, 1, "#4a3624");
+  R(c, X - 8, Y - 8, 12, 2, "#3a2a1c"); R(c, X - 8, Y - 8, 12, 1, "#5a4028"); R(c, X - 7, Y - 6, 1, 6, "#2a1a10"); R(c, X + 2, Y - 6, 1, 6, "#2a1a10");
 }
 function drawEliasSeated(c: Ctx, x: number, y: number, t: number, photo: boolean): void {
   const X = Math.round(x); const Y = Math.round(y);
-  R(c, X - 8, Y - 26, 2, 17, "#3a2a1c"); R(c, X - 7, Y - 26, 1, 16, "#4a3624"); R(c, X - 8, Y - 10, 13, 2, "#3a2a1c"); R(c, X - 7, Y - 8, 1, 8, "#2a1a10"); R(c, X + 3, Y - 8, 1, 8, "#2a1a10");
   const P = pose0(); const nod = Math.sin(t * 0.8) > 0.7 ? 1 : 0;
-  P.fix = 10.0; P.t0 = 1.42; P.k0 = 1.5; P.t1 = 1.32; P.k1 = 1.36; P.lean = -0.06 + (photo ? 0.12 : 0); P.tilt = photo ? 0.3 + nod * 0.1 : 0.05 * nod; P.hx = -1.2;
-  if (photo) { P.s0 = 0.95; P.e0 = 1.05; P.s1 = 0.75; P.e1 = 1.2; } else { P.s0 = 0.3; P.e0 = 2.65; P.s1 = 0.6; P.e1 = 1.0; }
+  P.fix = 8.4; P.t0 = 1.42; P.k0 = 1.5; P.t1 = 1.32; P.k1 = 1.36; P.lean = -0.04 + (photo ? 0.12 : 0); P.tilt = photo ? 0.3 + nod * 0.1 : 0.05 * nod; P.hx = -1.2;
+  if (photo) { P.s0 = 0.9; P.e0 = 1.25; P.s1 = 0.7; P.e1 = 1.35; } else { P.s0 = 0.3; P.e0 = 2.65; P.s1 = 0.6; P.e1 = 1.0; }
   const j = figure(c, X, Y, ELOOK, 1, P, true);
-  if (photo) { const px = j.hx + 0.5; const py = j.hy - 3.5; R(c, px, py, 4, 5, "#e8e0c8"); R(c, px + 1, py + 1, 2, 2, "#8a6a5a"); glow(c, px + 2, py + 2, 8, "255,230,190", 0.4); }
+  if (photo) { const px = Math.round(j.hx); const py = Math.round(j.hy - 3); R(c, px, py, 3, 4, "#e8e0c8"); R(c, px + 1, py + 1, 1, 2, "#8a6a5a"); glow(c, px + 1.5, py + 2, 7, "255,230,190", 0.35); }
   else { R(c, j.hx, j.hy - 3, 1, 3, "#1a1a1e"); R(c, j.hx, j.hy - 2, 1, 1, "#5ff0d8"); glow(c, j.hx, j.hy - 2, 5, "95,240,216", 0.5); }
 }
 const PCACHE = new WeakMap<Look, Map<number, HTMLCanvasElement>>();
+const PFOOT = new WeakMap<HTMLCanvasElement, number>();
 let BAKE = 0;
-function pedFrame(b: Ctx, L: Look, x: number, y: number, f: number, fr: number, mk: () => Pose): void {
+const NWF = 16;
+// cached ped frame; returns the world y of the lowest drawn foot pixel
+function pedFrame(b: Ctx, L: Look, x: number, y: number, f: number, fr: number, mk: () => Pose): number {
   let m = PCACHE.get(L); if (!m) { m = new Map<number, HTMLCanvasElement>(); PCACHE.set(L, m); }
   const key = SC * 1000 + fr;
   let cv = m.get(key);
   const hh = Math.ceil(L.h) + 8;
   if (!cv) {
-    if (BAKE <= 0) { figure(b, x, y, L, f, mk(), false); return; }
-    BAKE--; cv = document.createElement("canvas"); cv.width = 26 * SC; cv.height = hh * SC;
-    const cx = cv.getContext("2d"); if (!cx) return;
-    cx.setTransform(SC, 0, 0, SC, 0, 0); figure(cx, 13, hh - 2, L, 1, mk(), true); m.set(key, cv);
+    if (BAKE <= 0) return figure(b, x, y, L, f, mk(), false).foot;
+    BAKE--; cv = document.createElement("canvas"); cv.width = 34 * SC; cv.height = hh * SC;
+    const cx = cv.getContext("2d"); if (!cx) return y;
+    cx.setTransform(SC, 0, 0, SC, 0, 0); const j = figure(cx, 17, hh - 2, L, 1, mk(), true); m.set(key, cv); PFOOT.set(cv, j.foot - (hh - 2));
   }
-  if (f > 0) b.drawImage(cv, Math.round(x) - 13, Math.round(y) - hh + 2, 26, hh);
-  else { b.save(); b.translate(Math.round(x), 0); b.scale(-1, 1); b.drawImage(cv, -13, Math.round(y) - hh + 2, 26, hh); b.restore(); }
+  if (f > 0) b.drawImage(cv, Math.round(x) - 17, Math.round(y) - hh + 2, 34, hh);
+  else { b.save(); b.translate(Math.round(x), 0); b.scale(-1, 1); b.drawImage(cv, -17, Math.round(y) - hh + 2, 34, hh); b.restore(); }
+  return Math.round(y) + (PFOOT.get(cv) ?? 0);
 }
 
 type Cat = "Memory chips" | "Photographs" | "Audio recordings" | "Documents" | "Access cards" | "Clues";
@@ -767,7 +901,7 @@ function pedLook(s: number, kind: string, lane: number): Look {
   const L: Look = {
     coat: kind === "worker" ? "#3a3a20" : pk(PCOAT, 1), hair: bd === "old" ? pk(["#c8c0b0", "#8a8a8a", "#e0dcd4"], 2) : pk(PHAIR, 2), skin: syn ? "#e6dcd4" : pk(PSKIN, 3),
     accent: kind === "worker" ? "#d8c020" : pk(PACC, 4), rim: syn ? "#5ff0d8" : h1(s + 5) > 0.45 ? pk(PRIM, 6) : "",
-    h: Math.round(hgt * (lane === 0 ? 0.86 : 1)),
+    h: Math.round(hgt * (lane === 0 ? 0.94 : 1)),
     extra: kind === "worker" ? "cap belt" : kind === "rider" ? "visor pack" : kind === "hood" ? (h1(s + 8) > 0.5 ? "bag" : "") : kid ? (h1(s + 8) > 0.5 ? "boots" : "") : pk(PEXTRA, 8),
     b: bd, cl: kind === "worker" ? 1 : kind === "rider" ? 1 : kid ? pn([1, 2], 13) : pn([0, 1, 1, 2, 2, 2, 3], 13), hs,
     sh: syn ? "#dfe6e6" : pk(PSH, 9), pa: pk(PPA, 10), open: h1(s + 14) > 0.5,
@@ -808,8 +942,8 @@ function updPeds(dt: number): void {
     if (p.bubT > 0) p.bubT -= dt;
     if (p.gl > 0) p.gl -= dt;
     const near = p.lane === 1 && Math.abs(p.x - g.px) < 15 && g.scene === "play";
-    p.dy += ((near ? -4 : 0) - p.dy) * Math.min(1, dt * 7);
-    if (near && p.gl <= 0 && Math.random() < dt * 1.5) p.gl = 1.4;
+    p.dy = 0;
+    if (near && p.st !== "walk" && p.gl <= 0 && Math.random() < dt * 1.5) p.gl = 1.4;
     if (p.st === "walk") {
       const ox = p.x; p.x += p.dir * p.sp * dt * (near ? 0.55 : 1);
       if (p.lane < 2 && p.kind !== "rider") for (const s of PSTOP[g.loc]) if ((ox - s[0]) * (p.x - s[0]) < 0 && Math.random() < 0.22) { p.st = s[1]; p.stT = 2 + Math.random() * 4; }
@@ -836,33 +970,39 @@ function umbrella(b: Ctx, cx: number, y: number, r: number, col: string, rim: st
   if (rim) { R(b, cx - r, y, 2 * r + 1, 1, rim); glowRect(b, cx - r, y - Math.round(r * 0.5), 2 * r + 1, Math.round(r * 0.5) + 1, rim, 0.4); }
   R(b, cx, y + 1, 1, 7, "#0a0c10");
 }
-function pedPose(fr: number, sd: number): Pose {
-  if (fr < 10) return gait(fr / 10, false, 1);
+function pedPose(fr: number, sd: number, D: number): Pose {
+  if (fr < NWF) return gaitIK(fr / NWF, 1, 0, D, 0, sd);
   const P = pose0();
-  if (fr === 10 || fr === 11) { P.br = fr === 10 ? 1 : 0; P.s0 = 0.06 + 0.03 * P.br; P.s1 = -0.06; P.hx = 0.2 * Math.sin(sd); P.k0 = 0.12; }
-  else if (fr === 12) { P.s0 = 0.35; P.e0 = 2.55; P.s1 = 0.4; P.e1 = 1.5; P.k1 = 0.25; }
-  else if (fr === 13) { P.s0 = 0.55; P.e0 = 1.9; P.s1 = 0.1; P.tilt = 0.35; }
-  else if (fr === 14) { P.s0 = 1.15; P.e0 = 0.25; P.s1 = 1.05; P.e1 = 0.3; P.lean = 0.16; P.t0 = 0.18; P.k0 = 0.2; P.t1 = -0.12; P.k1 = 0.12; }
+  if (fr === 20 || fr === 21) { P.br = fr === 20 ? 1 : 0; P.s0 = 0.06 + 0.03 * P.br; P.s1 = -0.06; P.hx = 0.2 * Math.sin(sd); P.k0 = 0.12; }
+  else if (fr === 22) { P.s0 = 0.35; P.e0 = 2.55; P.s1 = 0.4; P.e1 = 1.5; P.k1 = 0.25; }
+  else if (fr === 23) { P.s0 = 0.55; P.e0 = 1.9; P.s1 = 0.1; P.tilt = 0.35; }
+  else if (fr === 24) { P.s0 = 1.15; P.e0 = 0.25; P.s1 = 1.05; P.e1 = 0.3; P.lean = 0.16; P.t0 = 0.18; P.k0 = 0.2; P.t1 = -0.12; P.k1 = 0.12; }
   return P;
 }
 function drawPed(b: Ctx, p: Ped, x: number, y: number, t: number): void {
   const L = p.look; const mv = p.st === "walk"; let f = p.dir;
-  if (p.gl > 0) f = G.px > p.x ? 1 : -1;
-  const ph = t * (1.5 + p.sp * 0.36) + p.seed;
-  const wf = Math.floor(q(ph / (Math.PI * 2), 10) * 10 + 0.001);
+  if (p.gl > 0 && !mv) f = G.px > p.x ? 1 : -1;
+  const kk = L.h / 31; const D = strideK(p.sp / kk);
+  const ph = (p.x * p.dir) / (D * kk) + p.seed * 0.17;
+  const wf = Math.floor(q(ph, NWF) * NWF + 0.001) % NWF;
   const sd = p.seed * 0.37;
-  const idf = Math.sin(t * 1.7 + sd) > 0 ? 10 : 11;
-  const fig = (L2: Look, xx: number, fr: number, yy: number): void => pedFrame(b, L2, xx, yy, f, fr, (): Pose => pedPose(fr, sd));
+  const idf = Math.sin(t * 1.7 + sd) > 0 ? 20 : 21;
+  const fig = (L2: Look, xx: number, fr: number, yy: number): void => {
+    if (p.lane < 2) shade(b, xx, yy, L2.h * 0.3, p.lane === 0 ? 0.7 : 1);
+    const ft = pedFrame(b, L2, xx, yy, f, fr, (): Pose => pedPose(fr, sd, D));
+    if (DBG.foot) DBG.foot.push([ft, yy, 0]);
+  };
   const top = y - L.h;
   if (p.kind === "rider") {
     const dy = y - 3;
+    shade(b, x, y, 18, 1);
     R(b, x - 8, dy, 17, 1, "#1a2228"); R(b, x - 8, dy + 1, 17, 1, "#0c1216"); R(b, x - 9, y - 2, 3, 2, "#05080a"); R(b, x + 6, y - 2, 3, 2, "#05080a");
     R(b, x + f * 8, dy - 15, 1, 15, "#2a3238"); R(b, x + f * 6, dy - 16, 4, 1, "#3a444a");
-    fig(L, x - f, 14, dy);
+    { const ft = pedFrame(b, L, x - f, dy, f, 24, (): Pose => pedPose(24, sd, D)); if (DBG.foot) DBG.foot.push([ft, dy, 0]); }
     R(b, x + f * 8, dy - 12, 1, 1, "#fff2c0"); glow(b, x + f * 10, dy - 12, 12, "255,240,200", 0.8); glow(b, x - f * 8, dy, 5, "255,80,80", 0.6);
     return;
   }
-  if (p.kind === "couple") { fig(L, x - 4, mv ? wf : idf, y); fig(p.look2, x + 4, mv ? (wf + 5) % 10 : idf, y); umbrella(b, x, top - 3, 13, "#1a1420", "#ff6f9a"); return; }
+  if (p.kind === "couple") { fig(L, x - 4, mv ? wf : idf, y); fig(p.look2, x + 4, mv ? (wf + NWF / 2) % NWF : idf, y); umbrella(b, x, top - 3, 13, "#1a1420", "#ff6f9a"); return; }
   if (p.kind === "vendor") {
     R(b, x + 5, y - 14, 20, 11, "#3a2616"); R(b, x + 5, y - 15, 20, 1, "#c85a2a"); R(b, x + 5, y - 9, 20, 1, "#2a1a10"); R(b, x + 7, y - 3, 3, 3, "#05080a"); R(b, x + 20, y - 3, 3, 3, "#05080a");
     R(b, x + 15, y - 38, 1, 23, "#1a1a1a");
@@ -871,9 +1011,10 @@ function drawPed(b: Ctx, p: Ped, x: number, y: number, t: number): void {
     for (let k = 0; k < 3; k++) { const qq = (t * 0.6 + k / 3) % 1; b.globalAlpha = 0.35 * (1 - qq); R(b, x + 9 + k * 4 + Math.sin(t * 2 + k) * 1.5, y - 16 - qq * 12, 2, 2, "#e8e0d0"); b.globalAlpha = 1; }
     f = 1; fig(L, x, idf, y); return;
   }
-  const fr = mv ? wf : p.st === "smoke" ? 12 : p.st === "look" ? 13 : idf;
+  const fr = mv ? wf : p.st === "smoke" ? 22 : p.st === "look" ? 23 : idf;
   if (p.kind === "dog") {
-    const dx = x + f * 11; const bb = mv ? Math.round(Math.abs(Math.sin(ph * 1.5))) : 0; const lg = mv ? Math.round(Math.sin(ph * 2)) : 0;
+    const dx = x + f * 11; const dp = ph * Math.PI * 4; const bb = mv ? Math.round(Math.abs(Math.sin(dp))) : 0; const lg = mv ? Math.round(Math.sin(dp)) : 0;
+    shade(b, dx, y, 8, 0.8);
     R(b, dx - 4, y - 6 - bb, 8, 3, "#4a3220"); R(b, dx - 4, y - 6 - bb, 8, 1, "#5a4230"); R(b, f > 0 ? dx + 3 : dx - 5, y - 8 - bb, 2, 3, "#4a3220"); R(b, f > 0 ? dx + 4 : dx - 6, y - 7 - bb, 2, 1, "#3a2414"); R(b, f > 0 ? dx - 6 : dx + 4, y - 7 - bb, 2, 1, "#4a3220");
     R(b, dx - 3 + lg, y - 3, 1, 3, "#3a2414"); R(b, dx + 2 - lg, y - 3, 1, 3, "#3a2414");
   }
@@ -887,11 +1028,11 @@ function drawPed(b: Ctx, p: Ped, x: number, y: number, t: number): void {
   if (p.bubT > 0 && p.st === "chat") { const by = top - 9; R(b, x - 4, by, 9, 5, "#dfe9e8"); R(b, x - 1, by + 5, 1, 1, "#dfe9e8"); const n = Math.floor(t * 4) % 4; for (let k = 0; k < 3; k++) if (k < n) R(b, x - 2 + k * 2, by + 2, 1, 1, "#203038"); }
 }
 function drawPeds(b: Ctx, cam: number, lane: number): void {
-  const t = G.t; const ly = lane === 0 ? (G.loc === "market" ? FEET - 3 : FEET - 7) : FEET;
+  const t = G.t; const ly = FEET;
   for (const p of G.peds) {
     if (p.loc !== G.loc || p.lane !== lane || (!G.gfx && p.half)) continue;
     const sx = Math.round(p.x - cam); if (sx < -34 || sx > W + 34) continue;
-    drawPed(b, p, sx, ly + Math.round(p.dy), t);
+    drawPed(b, p, sx, ly, t);
   }
 }
 type Chat = { a: Npc; b: Npc; l: string[]; t: number };
@@ -945,12 +1086,12 @@ function makeNpcs(): Npc[] {
     mkNpc("dex", "Dex", "district", 700, FEET, 300, 1150, 22, ["Can't stop. Got a package that hums.", "AURELION vans everywhere tonight. Everywhere.", "You didn't see me. I didn't see you."]),
     mkNpc("bram", "Officer Bram", "district", 1000, FEET, 600, 1290, 10, ["Curfew's a suggestion down here.", "Kane's asking about you. I said nothing. Mostly.", "Synthetics or not, everybody gets wet."]),
     mkNpc("lulu", "Lulu", "district", 200, FEET, 100, 900, 26, ["Nice coat. I'll steal it later.", "Saw your face on an old poster once. Or a ghost of you.", "Hiro gives me the burnt noodles. Best ones."]),
-    mkNpc("hiro", "Hiro", "district", 202, 146, 202, 202, 0, []),
+    mkNpc("hiro", "Hiro", "district", 202, FEET, 202, 202, 0, []),
     mkNpc("pix", "Pix", "district", 430, FEET, 430, 430, 0, []),
-    mkNpc("oyelo", "Oyelo", "market", 360, 146, 360, 360, 0, []),
-    mkNpc("tam", "Tam", "market", 520, 146, 520, 520, 0, ["Mm. On break. Forever.", "Recall stall. Your past, slightly used.", "Don't buy the cheap ones. They itch."]),
+    mkNpc("oyelo", "Oyelo", "market", 360, FEET, 360, 360, 0, []),
+    mkNpc("tam", "Tam", "market", 520, FEET, 520, 520, 0, ["Mm. On break. Forever.", "Recall stall. Your past, slightly used.", "Don't buy the cheap ones. They itch."]),
     mkNpc("rook", "Rook", "market", 300, FEET, 90, 860, 9, ["Last night I was a pilot. Tonight I'm a kid at the sea.", "Do you ever forget whose hands these are?", "Nova's chips are the real ones. Too real."]),
-    mkNpc("nova", "NOVA", "market", 770, 146, 770, 770, 0, []),
+    mkNpc("nova", "NOVA", "market", 770, FEET, 770, 770, 0, []),
   ];
 }
 function makeDrops(): Drop[] { const d: Drop[] = []; for (let i = 0; i < 150; i++) d.push({ x: Math.random() * 380, y: Math.random() * H, v: 160 + Math.random() * 120, l: 3 + Math.floor(Math.random() * 4), g: FEET + Math.random() * 20 }); return d; }
@@ -1265,13 +1406,13 @@ const TALK: Record<string, (n: Npc) => Line[]> = {
 const CHATS = [["Third siren tonight.", "City's restless."], ["You hear about the AURELION vans?", "Heard nothing. Saw nothing."], ["Rain's warm today.", "Rain is never warm."], ["Got a light?", "Got a curfew."], ["Nova's back in business.", "Nova never left."]];
 
 const SPOTS: Spot[] = [
-  { id: "drawer", loc: "apt", x: 72, y: 118, kind: "EXAMINE", label: "Desk drawer", show: () => !has("badge"), use: () => say([E("My old badge. Revoked, but the chip inside still talks to cheap doors.")], () => give("badge"), false) },
-  { id: "photo", loc: "apt", x: 98, y: 112, kind: "EXAMINE", label: "Old photograph", show: () => !G.flags.photoSeen, use: () => say([E("Mara. The pier, the summer before the blackout. She made me promise to keep this."), E("Six years. And now a stranger says her name like it's nothing.")], () => { G.flags.photoSeen = 1; G.rev++; }, true) },
-  { id: "photo2", loc: "apt", x: 98, y: 112, kind: "COLLECT", label: "Old photograph", show: () => !!G.flags.photoSeen && !has("photo"), use: () => give("photo") },
-  { id: "term", loc: "apt", x: 146, y: 96, kind: "ACCESS", label: "", show: () => true, use: () => say(termHub(), null, false) },
-  { id: "window", loc: "apt", x: 240, y: 92, kind: "EXAMINE", label: "Window", show: () => true, use: () => say([E("Rain on the glass. Down there a billboard sells sunlight to people who have never seen it.")], null, false) },
-  { id: "door", loc: "apt", x: 334, y: 100, kind: "ENTER", label: "Street", show: () => true, use: () => go("district", 46) },
-  { id: "home", loc: "district", x: 42, y: 106, kind: "ENTER", label: "Apartment", show: () => true, use: () => go("apt", 326) },
+  { id: "drawer", loc: "apt", x: 72, y: 144, kind: "EXAMINE", label: "Desk drawer", show: () => !has("badge"), use: () => say([E("My old badge. Revoked, but the chip inside still talks to cheap doors.")], () => give("badge"), false) },
+  { id: "photo", loc: "apt", x: 98, y: 136, kind: "EXAMINE", label: "Old photograph", show: () => !G.flags.photoSeen, use: () => say([E("Mara. The pier, the summer before the blackout. She made me promise to keep this."), E("Six years. And now a stranger says her name like it's nothing.")], () => { G.flags.photoSeen = 1; G.rev++; }, true) },
+  { id: "photo2", loc: "apt", x: 98, y: 136, kind: "COLLECT", label: "Old photograph", show: () => !!G.flags.photoSeen && !has("photo"), use: () => give("photo") },
+  { id: "term", loc: "apt", x: 146, y: 124, kind: "ACCESS", label: "", show: () => true, use: () => say(termHub(), null, false) },
+  { id: "window", loc: "apt", x: 236, y: 92, kind: "EXAMINE", label: "Window", show: () => true, use: () => say([E("Rain on the glass. Down there a billboard sells sunlight to people who have never seen it.")], null, false) },
+  { id: "door", loc: "apt", x: 334, y: 114, kind: "ENTER", label: "Street", show: () => true, use: () => go("district", 46) },
+  { id: "home", loc: "district", x: 42, y: 112, kind: "ENTER", label: "Apartment", show: () => true, use: () => go("apt", 326) },
   { id: "ad", loc: "district", x: 545, y: 92, kind: "EXAMINE", label: "Holo-ad", show: () => true, use: () => say([{ who: "", text: "AURELION. YOUR PAST, PERFECTED. A smiling family that has never existed waves at the rain." }, E("They sell childhoods by the gigabyte. Mara used to laugh at these ads.")], null, false) },
   { id: "cr1", loc: "district", x: 612, y: 146, kind: "COLLECT", label: "Credit chip", show: () => !G.flags.cr1, use: () => { G.flags.cr1 = 1; G.credits += 15; toast("+15 credits"); coin(); } },
   { id: "pawn", loc: "district", x: 705, y: 102, kind: "EXAMINE", label: "Lucky 9 shutter", show: () => true, use: () => say([E("Lucky 9 Pawn. Closed. A sticker on the shutter: precinct seal, signed KANE.")], null, false) },
@@ -1451,7 +1592,8 @@ function update(dt: number): void {
   g.jumpQ = false;
   g.jbuf = Math.max(0, g.jbuf - dt);
   g.coyote = g.grounded ? 0.1 : Math.max(0, g.coyote - dt);
-  if (g.jbuf > 0 && g.coyote > 0) { g.vy = -182; g.grounded = false; g.coyote = 0; g.jbuf = 0; tone(220, 0.1, "triangle", 0.04, 0, 330); puff(g.px, g.py, 3); }
+  if (g.jbuf > 0 && g.coyote > 0 && EA.pre <= 0) { EA.pre = PRE; g.coyote = 0; g.jbuf = 0; }
+  if (EA.pre > 0) { EA.pre -= dt; if (EA.pre <= 0) { EA.pre = 0; g.vy = -182; g.grounded = false; g.coyote = 0; tone(220, 0.1, "triangle", 0.04, 0, 330); puff(g.px, g.py, 3); EA.hlV -= 5; EA.swayV += 10; EA.dip = 0; EA.dipV = 0; } }
   const wasAir = !g.grounded;
   g.vy += (g.vy < 0 && !g.jumpHeld ? 850 : 560) * dt;
   const prevY = g.py; const fallV = g.vy;
@@ -1460,11 +1602,8 @@ function update(dt: number): void {
   g.py += g.vy * dt; g.grounded = false;
   if (g.py >= FEET) { g.py = FEET; g.vy = 0; g.grounded = true; }
   else if (g.vy > 0) for (const p of PLATS[g.loc]) if (g.px >= p.x0 && g.px <= p.x1 && prevY <= p.y + 0.01 && g.py >= p.y) { g.py = p.y; g.vy = 0; g.grounded = true; }
-  if (wasAir && g.grounded) { g.landT = fallV > 150 ? 0.15 : 0.08; land(); if (fallV > 120) puff(g.px, g.py, 5); }
-  if (g.grounded && Math.abs(g.vx) > 8) {
-    g.walk += dt * Math.abs(g.vx) * 0.21;
-    const sp = Math.floor(g.walk / Math.PI); if (sp !== g.stepPh) { g.stepPh = sp; step(); if (Math.abs(g.vx) > 80) puff(g.px - g.facing * 3, g.py, 1); }
-  }
+  if (wasAir && g.grounded) { g.landT = fallV > 150 ? 0.15 : 0.08; land(); animLand(fallV); if (fallV > 120) puff(g.px, g.py, 5); }
+  animTick(dt);
   g.landT = Math.max(0, g.landT - dt); g.actT = Math.max(0, g.actT - dt);
   if (g.loc === "district" && g.obj === 1 && g.px > 1000) complete(1);
   if (busy) return;
@@ -1641,7 +1780,9 @@ function drawNpcs(b: Ctx, cam: number): void {
     const sx = n.x - cam; if (sx < -24 || sx > W + 24) continue;
     const moving = n.speed > 0 && n.wait <= 0;
     const f = n.speed === 0 ? (G.px > n.x ? 1 : -1) : n.wait > 0 && n.peek ? (Math.sin(t * 1.3 + n.x) > 0 ? 1 : -1) : n.dir;
+    shade(b, sx, n.y, n.look.h * 0.3, 1);
     const j = figure(b, sx, n.y, n.look, f, npcPose(n, moving, t), G.gfx > 0);
+    if (DBG.foot) DBG.foot.push([j.foot, n.y, 0]);
     idleFx(b, n, j, f, t);
   }
 }
@@ -1656,32 +1797,33 @@ function idleFx(b: Ctx, n: Npc, j: Joints, f: number, t: number): void {
 }
 function drawApt(b: Ctx, cc: Caches, cam: number, seated: boolean): void {
   const t = G.t;
-  const wx = 190 - cam;
-  b.save(); b.beginPath(); b.rect(wx, 30, 100, 90); b.clip();
-  const sky = b.createLinearGradient(0, 30, 0, 120); sky.addColorStop(0, "#03080c"); sky.addColorStop(1, "#1a4a46");
-  b.fillStyle = sky; b.fillRect(wx, 30, 100, 90);
-  b.drawImage(cc.far, 60 + t * 1.5 % 200, 40, 160, 130, wx, 30, 100, 82);
-  b.drawImage(cc.mid, 300, 60, 140, 110, wx, 52, 100, 78);
-  { const ax = wx + 62; const on = flick(t, 77); R(b, ax, 42, 26, 16, on ? "rgba(255,150,60,0.2)" : "rgba(40,30,20,0.3)"); for (let a = 0; a < 14; a++) { const an = Math.PI + (a / 13) * Math.PI; R(b, ax + 13 + Math.cos(an) * 5, 53 + Math.sin(an) * 5, 1, 1, on ? "#ffb04a" : "#5a3a1a"); } R(b, ax + 4, 53, 18, 1, on ? "#ffd27a" : "#3a2a1a"); if (on) glow(b, ax + 13, 49, 18, "255,170,80", 0.45); }
-  for (const c of G.cars) { const x = wx + ((c.x * 0.3 % 120) + 120) % 120 - 10; R(b, x, 40 + c.y * 0.4, 5, 1, "#ffd08a"); glow(b, x, 40 + c.y * 0.4, 4, "255,210,140", 0.6); }
+  const wx = 196 - cam; const WY = 96; const WW = 80; const WH = 46;
+  b.save(); b.beginPath(); b.rect(wx, WY, WW, WH); b.clip();
+  const sky = b.createLinearGradient(0, WY, 0, WY + WH); sky.addColorStop(0, "#03080c"); sky.addColorStop(1, "#1a4a46");
+  b.fillStyle = sky; b.fillRect(wx, WY, WW, WH);
+  b.drawImage(cc.far, 60 + t * 1.5 % 200, 40, 160, 130, wx - 6, WY - 4, 92, 74);
+  b.drawImage(cc.mid, 300, 60, 140, 110, wx - 4, WY + 14, 88, 69);
+  { const ax = wx + 48; const on = flick(t, 77); R(b, ax, WY + 4, 18, 11, on ? "rgba(255,150,60,0.2)" : "rgba(40,30,20,0.3)"); for (let a = 0; a < 10; a++) { const an = Math.PI + (a / 9) * Math.PI; R(b, ax + 9 + Math.cos(an) * 4, WY + 12 + Math.sin(an) * 4, 1, 1, on ? "#ffb04a" : "#5a3a1a"); } R(b, ax + 3, WY + 12, 12, 1, on ? "#ffd27a" : "#3a2a1a"); if (on) glow(b, ax + 9, WY + 9, 14, "255,170,80", 0.45); }
+  for (const c of G.cars) { const x = wx + ((c.x * 0.3 % 100) + 100) % 100 - 10; const y = WY + 3 + c.y * 0.25; R(b, x, y, 4, 1, "#ffd08a"); glow(b, x, y, 3, "255,210,140", 0.6); }
   b.fillStyle = "rgba(180,230,220,0.35)";
-  for (let k = 0; k < 40; k++) { const x = wx + h1(k * 1.3) * 100; const y = 30 + ((h1(k * 2.1) * 90 + t * (40 + h1(k) * 30)) % 90); b.fillRect(Math.round(x), Math.round(y), 1, 3); }
+  for (let k = 0; k < 30; k++) { const x = wx + h1(k * 1.3) * WW; const y = WY + ((h1(k * 2.1) * WH + t * (40 + h1(k) * 30)) % WH); b.fillRect(Math.round(x), Math.round(y), 1, 2); }
   b.fillStyle = "rgba(200,240,235,0.25)";
-  for (let k = 0; k < 10; k++) { const x = wx + h1(k * 7.7) * 98; const y = 30 + ((t * (4 + k) + k * 13) % 90); b.fillRect(Math.round(x), Math.round(y), 1, 2); }
+  for (let k = 0; k < 8; k++) { const x = wx + h1(k * 7.7) * (WW - 2); const y = WY + ((t * (4 + k) + k * 13) % WH); b.fillRect(Math.round(x), Math.round(y), 1, 2); }
   b.restore();
   b.drawImage(cc.apt, cam, 0, W, H, 0, 0, W, H);
   b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.06; b.fillStyle = "#5ff0d8";
-  b.beginPath(); b.moveTo(wx, 30); b.lineTo(wx + 100, 30); b.lineTo(wx + 150, FEET + 10); b.lineTo(wx - 20, FEET + 10); b.closePath(); b.fill(); b.restore();
-  if (G.sweep < 0 && !seated) { const p = clamp(-G.sweep / 2.2, 0, 1); const bx0 = wx + 110 - p * 300; b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = Math.sin(p * Math.PI) * 0.16; const sg = b.createLinearGradient(bx0 - 24, 0, bx0 + 24, 0); sg.addColorStop(0, "rgba(255,220,170,0)"); sg.addColorStop(0.5, "rgba(255,220,170,1)"); sg.addColorStop(1, "rgba(255,220,170,0)"); b.fillStyle = sg; b.beginPath(); b.moveTo(bx0 - 10, 14); b.lineTo(bx0 + 10, 14); b.lineTo(bx0 + 26, FEET); b.lineTo(bx0 - 22, FEET); b.closePath(); b.fill(); b.restore(); }
-  glow(b, 125 - cam, 102, 40, "255,180,100", 0.6);
-  R(b, 121 - cam, 100, 9, 2, "#ffe0a0");
-  const sx = 134 - cam;
-  for (let k = 0; k < 5; k++) if (h1(k + Math.floor(t * 2)) > 0.25) R(b, sx + 2, 110 + k * 3, 6 + Math.floor(h1(k * 3 + Math.floor(t)) * 14), 1, "#5dff9a");
-  glowRect(b, sx, 108, 24, 15, "#5dff9a", 0.25);
-  if (!has("photo") && !seated) { R(b, 94 - cam, 126, 7, 2, "#e8e0c8"); if (Math.sin(t * 3) > 0.6) glow(b, 97 - cam, 126, 5, "255,240,200", 0.5); }
+  b.beginPath(); b.moveTo(wx, 96); b.lineTo(wx + 80, 96); b.lineTo(wx + 104, FEET + 6); b.lineTo(wx - 12, FEET + 6); b.closePath(); b.fill(); b.restore();
+  if (G.sweep < 0 && !seated) { const p = clamp(-G.sweep / 2.2, 0, 1); const bx0 = wx + 110 - p * 300; b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = Math.sin(p * Math.PI) * 0.16; const sg = b.createLinearGradient(bx0 - 24, 0, bx0 + 24, 0); sg.addColorStop(0, "rgba(255,220,170,0)"); sg.addColorStop(0.5, "rgba(255,220,170,1)"); sg.addColorStop(1, "rgba(255,220,170,0)"); b.fillStyle = sg; b.beginPath(); b.moveTo(bx0 - 10, 80); b.lineTo(bx0 + 10, 80); b.lineTo(bx0 + 26, FEET); b.lineTo(bx0 - 22, FEET); b.closePath(); b.fill(); b.restore(); }
+  glow(b, 121 - cam, 138, 26, "255,180,100", 0.6);
+  R(b, 118 - cam, 137, 6, 1, "#ffe0a0");
+  const sx = 137 - cam;
+  for (let k = 0; k < 5; k++) if (h1(k + Math.floor(t * 2)) > 0.25) R(b, sx + 1, 133 + k * 2, 4 + Math.floor(h1(k * 3 + Math.floor(t)) * 13), 1, "#5dff9a");
+  glowRect(b, sx, 132, 20, 10, "#5dff9a", 0.25);
+  if (!has("photo") && !seated) { R(b, 97 - cam, 142, 3, 4, "#e8e0c8"); R(b, 98 - cam, 143, 1, 2, "#8a6a5a"); if (Math.sin(t * 3) > 0.6) glow(b, 98 - cam, 144, 5, "255,240,200", 0.5); }
   const ringOn = G.ringing && Math.sin(t * 20) > 0;
-  if (!(seated && G.dlg)) { R(b, 106 - cam, 125, 6, 3, "#1a1a1e"); R(b, 107 - cam, 125, 2, 1, ringOn ? "#ff5a5a" : "#3a1a1a"); }
-  if (ringOn) glow(b, 108 - cam, 125, 10, "255,80,80", 0.7);
+  if (!(seated && G.dlg)) { R(b, 106 - cam, 144, 5, 2, "#1a1a1e"); R(b, 107 - cam, 144, 2, 1, ringOn ? "#ff5a5a" : "#3a1a1a"); }
+  if (ringOn) glow(b, 108 - cam, 144, 9, "255,80,80", 0.7);
+  drawChair(b, 92 - cam, FEET);
   if (seated) drawEliasSeated(b, 92 - cam, FEET, t, !G.dlg);
 }
 function drawDistrictDyn(b: Ctx, cam: number): void {
@@ -1734,9 +1876,9 @@ function drawDistrictDyn(b: Ctx, cam: number): void {
 }
 function drawDistrictFront(b: Ctx, cam: number): void {
   const S = (x: number): number => Math.round(x - cam);
-  R(b, S(146), 136, 112, 2, "#8a5a36"); R(b, S(146), 136, 112, 1, "#e0a868"); R(b, S(148), 138, 108, 22, "#2a1810");
-  for (let k = 0; k < 5; k++) R(b, S(158 + k * 24), 142, 1, 18, "#1e100c");
-  for (let k = 0; k < 4; k++) { const ph = (G.t * 8 + k * 7) % 24; b.globalAlpha = 0.3 * (1 - ph / 24); R(b, S(190 + k * 5), 132 - ph, 2, 2, "#e8e0d0"); b.globalAlpha = 1; }
+  R(b, S(146), 142, 112, 2, "#8a5a36"); R(b, S(146), 142, 112, 1, "#e0a868"); R(b, S(148), 144, 108, 16, "#2a1810");
+  for (let k = 0; k < 5; k++) R(b, S(158 + k * 24), 147, 1, 13, "#1e100c");
+  for (let k = 0; k < 4; k++) { const ph = (G.t * 8 + k * 7) % 24; b.globalAlpha = 0.3 * (1 - ph / 24); R(b, S(190 + k * 5), 138 - ph, 2, 2, "#e8e0d0"); b.globalAlpha = 1; }
   for (const lx of [150, 254]) { const ly = 105 + Math.round(Math.sin(G.t * 1.5 + lx)); R(b, S(lx) - 2, ly, 5, 7, "#ff5a3a"); glow(b, S(lx), ly + 3, 18, "255,110,60", 0.7); }
 }
 function drawMarketDyn(b: Ctx, cam: number): void {
@@ -1770,8 +1912,8 @@ function drawMarketDyn(b: Ctx, cam: number): void {
 function drawMarketFront(b: Ctx, cam: number): void {
   const S = (x: number): number => Math.round(x - cam);
   for (const [x, w] of [[154, 72], [314, 92], [474, 92], [706, 128]] as [number, number][]) {
-    R(b, S(x), 136, w, 2, "#a87a46"); R(b, S(x), 136, w, 1, "#ffd090"); R(b, S(x) + 2, 138, w - 4, 22, "#3a2414");
-    for (let k = 0; k < w; k += 16) R(b, S(x) + k + 4, 141, 1, 19, "#24160c");
+    R(b, S(x), 142, w, 2, "#a87a46"); R(b, S(x), 142, w, 1, "#ffd090"); R(b, S(x) + 2, 144, w - 4, 16, "#3a2414");
+    for (let k = 0; k < w; k += 16) R(b, S(x) + k + 4, 146, 1, 14, "#24160c");
   }
 }
 function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement, cc: Caches): void {
@@ -1954,6 +2096,19 @@ function tag(c: Ctx, text: string, cx: number, y: number, fs: number, col: strin
   c.fillStyle = "rgba(2,10,12,0.88)"; c.fillRect(x, y, w, fs * 1.8);
   c.strokeStyle = col; c.lineWidth = Math.max(2, fs / 8); c.strokeRect(x, y, w, fs * 1.8);
   c.fillStyle = col; c.fillText(text, x + w / 2, y + fs * 0.95); c.textAlign = "left";
+}
+// camera view into the render buffer; the apartment is framed closer so the room reads at Elias's scale
+const APTZ = 1.6;
+function calcView(): { sx: number; sy: number; z: number } {
+  const g = G; const live = g.scene === "play" || g.scene === "cut";
+  const apt = g.loc === "apt" && (g.scene === "play" || (g.scene === "cut" && g.sceneT >= 8));
+  const z = (live ? Math.max(1, g.zoom) : 1) * (apt ? APTZ : 1);
+  const sw = W / z; const sh = H / z;
+  const fx = g.scene === "cut" ? 100 - Math.round(g.cam) : g.px - Math.round(g.cam);
+  const sx = clamp(fx - sw / 2, 0, W - sw);
+  const sy = apt ? clamp(FEET - sh * 0.84, 0, H - sh) : clamp(FEET - YO - 24 - sh * 0.55, 0, H - sh);
+  g.view = { sx, sy, z };
+  return g.view;
 }
 function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, inset: number, top: boolean): void {
   const g = G; const cssH = ch / dpr;
@@ -2145,11 +2300,7 @@ export default function AfterRain() {
       update(dt);
       b.setTransform(SC, 0, 0, SC, 0, 0); b.globalAlpha = 1; b.globalCompositeOperation = "source-over";
       render(b, rc, buf, rbuf, cc);
-      const z = G.scene === "play" || G.scene === "cut" ? Math.max(1, G.zoom) : 1;
-      const sw = W / z; const sh = H / z;
-      const fx = G.scene === "cut" ? 100 - Math.round(G.cam) : G.px - Math.round(G.cam);
-      const sx = clamp(fx - sw / 2, 0, W - sw); const sy = clamp(FEET - YO - 24 - sh * 0.55, 0, H - sh);
-      G.view = { sx, sy, z };
+      const { sx, sy, z } = calcView(); const sw = W / z; const sh = H / z;
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(buf, sx * SC, sy * SC, sw * SC, sh * SC, 0, 0, cv.width, cv.height);
       if (G.gfx && bx0 && bx1 && bx2 && bx3) {
