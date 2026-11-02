@@ -5,6 +5,8 @@ let W = 320;
 const H = 180;
 const FEET = 160;
 let YO = 0;
+let SC = 2;
+let PG = 0.5;
 let SIL: HTMLCanvasElement | null = null;
 const BLOOM = { n: 2, a0: 0.7, a1: 0.55 };
 type LocId = "apt" | "district" | "market";
@@ -280,9 +282,9 @@ function drawFg(f: Ctx, cc: Caches): void {
       if (p.loc !== L || p.lane !== 2 || (!g.gfx && p.half)) continue;
       const span = W + 160; const sx = ((((p.x - cam) * 1.6) % span) + span) % span - 80;
       if (sx < -40 || sx > W + 40) continue; any = true;
-      sc.save(); sc.translate(sx / 4, 47); sc.scale(0.6, 0.6);
+      sc.save(); sc.translate(sx / 4, 47); sc.scale(0.4, 0.4);
       drawPerson(sc, 0, 0, p.look, p.dir, g.t * 5 + p.seed, true);
-      if (p.kind === "umb") umbrella(sc, p.dir, -p.look.h + 3, 8, "#030507", "");
+      if (p.kind === "umb") umbrella(sc, p.dir * 2, -p.look.h - 2, 10, "#030507", "");
       sc.restore();
     }
     if (any) { f.save(); f.imageSmoothingEnabled = true; f.globalAlpha = 0.82; f.drawImage(SIL, 0, 0, 100, 45, 0, 0, 400, 180); f.restore(); }
@@ -471,70 +473,239 @@ function bakeMarketBack(c: Ctx): void {
   c.fillStyle = g; c.fillRect(0, 0, KW, H); c.restore();
 }
 
-type Look = { coat: string; hair: string; skin: string; accent: string; rim: string; h: number; extra: string };
+type Look = { coat: string; hair: string; skin: string; accent: string; rim: string; h: number; extra: string; b?: string; cl?: number; hs?: string; sh?: string; pa?: string; shoe?: string; open?: boolean; cool?: string };
+type Pose = { lean: number; hx: number; lift: number; t0: number; k0: number; f0: number; t1: number; k1: number; f1: number; s0: number; e0: number; s1: number; e1: number; tilt: number; sway: number; br: number; fix: number };
+type Joints = { hx: number; hy: number; fx: number; fy: number; ex: number; ey: number; top: number; sx: number; sy: number };
+type Pal = { coatD: string; coatH: string; coatF: string; paD: string; skinD: string; hairH: string; sh: string; pa: string; shoe: string; cool: string; warm: string };
+const PALS = new WeakMap<Look, Pal>();
+const BODY: Record<string, number[]> = { m: [1.5, 1.45, 1.15, 1.35, 1, 1, 0], f: [1.3, 1.2, 0.95, 1.4, 0.85, 0.97, 0], broad: [1.85, 1.75, 1.6, 1.5, 1.2, 1.04, 0], thin: [1.3, 1.2, 0.95, 1.1, 0.85, 0.97, 0], kid: [1.35, 1.25, 1.1, 1.25, 0.95, 1.28, 0], old: [1.4, 1.5, 1.2, 1.35, 0.95, 1, 0.16] };
+function hasX(L: Look, k: string): boolean { return L.extra === k || (" " + L.extra + " ").indexOf(" " + k + " ") >= 0; }
+function palOf(L: Look): Pal {
+  const o = PALS.get(L); if (o) return o;
+  const sh = L.sh ?? L.accent; const pa = L.pa ?? mixHex(L.coat, "#05070a", 0.55);
+  const p: Pal = { coatD: mixHex(L.coat, "#04060a", 0.42), coatH: mixHex(L.coat, "#c8e0e0", 0.13), coatF: mixHex(L.coat, "#04060a", 0.22), paD: mixHex(pa, "#020304", 0.45), skinD: mixHex(L.skin, "#2a1830", 0.38), hairH: mixHex(L.hair, "#ffd0a0", 0.18), sh, pa, shoe: L.shoe ?? "#07080a", cool: mixHex(L.cool ?? mixHex(L.coat, "#4ab8c0", 0.55), L.coat, 0.4), warm: L.rim ? mixHex(L.rim, L.coat, 0.3) : mixHex(L.coat, "#c08050", 0.45) };
+  PALS.set(L, p); return p;
+}
+function pose0(): Pose { return { lean: 0.03, hx: 0, lift: 0, t0: 0.05, k0: 0.08, f0: 0, t1: -0.05, k1: 0.1, f1: 0, s0: 0.06, e0: 0.18, s1: -0.05, e1: 0.22, tilt: 0, sway: 0, br: 0, fix: 0 }; }
+function q(v: number, n: number): number { return Math.floor((((v % 1) + 1) % 1) * n) / n; }
+function gait(p: number, run: boolean, k: number): Pose {
+  const P = pose0(); const T = Math.PI * 2;
+  const leg = (u: number): number[] => {
+    const s = Math.sin(T * u); const c = Math.cos(T * u);
+    if (run) return [0.12 + 0.74 * s, 0.25 + 1.6 * Math.pow(Math.max(0, Math.cos(T * (u + 0.12))), 1.3), -0.55 * Math.max(0, c)];
+    return [0.5 * s * k, 0.1 + 0.85 * k * Math.pow(Math.max(0, Math.cos(T * (u + 0.1))), 2) + 0.08 * Math.max(0, s), -0.35 * Math.max(0, c)];
+  };
+  const a = leg(p); const b = leg(p + 0.5);
+  P.t0 = a[0] ?? 0; P.k0 = a[1] ?? 0; P.f0 = a[2] ?? 0; P.t1 = b[0] ?? 0; P.k1 = b[1] ?? 0; P.f1 = b[2] ?? 0;
+  const s = Math.sin(T * p);
+  if (run) { P.s0 = -0.85 * s; P.s1 = 0.85 * s; P.e0 = 1.45 + 0.25 * Math.max(0, -s); P.e1 = 1.45 + 0.25 * Math.max(0, s); P.lean = 0.24; P.lift = 0.9 * Math.max(0, Math.sin(T * 2 * p - 0.5)); P.sway = 2.2 + 0.6 * Math.sin(T * 2 * p); }
+  else { P.s0 = -0.42 * k * s; P.s1 = 0.42 * k * s; P.e0 = 0.2 + 0.45 * Math.max(0, -s) * k; P.e1 = 0.2 + 0.45 * Math.max(0, s) * k; P.lean = 0.07; P.sway = 0.7 + 0.5 * Math.sin(T * 2 * p + 0.8); }
+  return P;
+}
+function idleP(t: number, sd: number): Pose {
+  const P = pose0(); const w = Math.sin(t * 0.45 + sd); const br = Math.sin(t * 1.7 + sd) * 0.5 + 0.5;
+  P.br = br; P.hx = 0.35 * w; P.t0 = 0.05 + 0.05 * w; P.k0 = 0.06 + Math.max(0, -w) * 0.22; P.t1 = -0.05 + 0.05 * w; P.k1 = 0.06 + Math.max(0, w) * 0.22;
+  P.s0 = 0.06 + 0.03 * br; P.s1 = -0.05 - 0.02 * br; P.sway = 0.15 * w;
+  return P;
+}
+function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims: boolean): Joints {
+  const X = Math.round(x); const Y = Math.round(y); const pal = palOf(L);
+  const bt = BODY[L.b ?? "m"] ?? BODY.m ?? [1.5, 1.45, 1.15, 1.35, 1, 1, 0];
+  const kid = L.b === "kid"; const hsc = bt[5] ?? 1; const k = L.h / (31 * (kid ? 1.08 : 1));
+  const lw = bt[4] ?? 1; const lean = P.lean + (bt[6] ?? 0);
+  const wd = 1.22; const g = PG; const qq = (v: number): number => Math.round(v / g) * g;
+  let ox = 0; let mono = "";
+  const F = (lx: number, ly: number, w: number, h: number, col: string): void => {
+    const x0 = qq(f > 0 ? lx : -lx - w); const x1 = qq(f > 0 ? lx + w : -lx); const y0 = qq(-ly - h); const y1 = qq(-ly);
+    c.fillStyle = mono || col; c.fillRect(X + x0 + ox, Y + y0, Math.max(g, x1 - x0), Math.max(g, y1 - y0));
+  };
+  const seg = (x1: number, y1: number, x2: number, y2: number, w1: number, w2: number, col: string): void => {
+    const dx = x2 - x1; const dy = y2 - y1; const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / g));
+    for (let i = 0; i <= n; i++) { const u = i / n; const w = w1 + (w2 - w1) * u; F(x1 + dx * u - w / 2, y1 + dy * u - w / 2, w, w, col); }
+  };
+  const TH = 7.4 * k * (kid ? 0.92 : 1); const SH = 7.0 * k * (kid ? 0.92 : 1); const AN = 0.9 * k; const FT = 2.4 * k * lw;
+  const legEnd = (ta: number, kb: number): number[] => { const kx = Math.sin(ta) * TH; const ky = -Math.cos(ta) * TH; const sa = ta - kb; return [kx, ky, kx + Math.sin(sa) * SH, ky - Math.cos(sa) * SH]; };
+  const A = legEnd(P.t0, P.k0); const B = legEnd(P.t1, P.k1);
+  const sole = (e: number[], fa: number): number => Math.min((e[3] ?? 0) - AN, (e[3] ?? 0) - AN * 0.3 + Math.sin(fa) * FT);
+  const hipY = P.fix > 0 ? P.fix * k : -Math.min(sole(A, P.f0), sole(B, P.f1)) + P.lift * k;
+  const hx = P.hx * k;
+  const TR = 9.6 * k * (kid ? 0.82 : 1);
+  const shx = hx + Math.sin(lean) * TR; const shy = hipY + Math.cos(lean) * TR + P.br * 0.3 * k;
+  const cl = L.cl ?? 1; const UA = 5.4 * k * (kid ? 0.88 : 1); const FA = 5.0 * k * (kid ? 0.88 : 1);
+  const hs = L.hs ?? "short";
+  const hw = 3.5 * k * hsc; const hh = 4.4 * k * hsc;
+  const hcx = shx + 0.35 * k + Math.sin(lean) * 1.0 * k + P.tilt * 1.3 * k; const hcy = shy + 0.7 * k + hh / 2 - Math.abs(P.tilt) * 0.9 * k;
+  const ht = hcy + hh / 2; const hb = hcy - hh / 2; const hf = hcx + hw / 2; const hbk = hcx - hw / 2;
+  const asx = shx - 0.25 * k; const asy = shy - 0.9 * k;
+  const arm = (sa: number, ea: number): number[] => { const ex = asx + Math.sin(sa) * UA; const ey = asy - Math.cos(sa) * UA; const fa = sa + ea; return [ex, ey, ex + Math.sin(fa) * FA, ey - Math.cos(fa) * FA]; };
+  const AR0 = arm(P.s0 + lean * 0.5, P.e0); const AR1 = arm(P.s1 + lean * 0.5, P.e1);
+  const cx = (ly: number): number => hx + (ly - hipY) * Math.tan(lean);
+  const legD = (e: number[], fa: number, col: string, colS: string): void => {
+    const kx = hx + (e[0] ?? 0); const ky = hipY + (e[1] ?? 0); const ax = hx + (e[2] ?? 0); const ay = hipY + (e[3] ?? 0);
+    seg(hx, hipY - 0.6 * k, kx, ky, 2.3 * k * lw, 1.8 * k * lw, col); seg(kx, ky, ax, ay, 1.7 * k * lw, 1.3 * k * lw, col);
+    const fx2 = ax + Math.cos(fa) * FT; const fy2 = ay - AN * 0.6 + Math.sin(fa) * FT;
+    seg(ax - 0.3 * k, ay - AN * 0.6, fx2, fy2, 1.3 * k, 1.0 * k, colS);
+    if (hasX(L, "boots")) seg(kx * 0.3 + ax * 0.7, ky * 0.3 + ay * 0.7, ax, ay - AN * 0.4, 1.6 * k, 1.5 * k, colS);
+  };
+  const armD = (e: number[], col: string, sk: string): void => {
+    const ex = e[0] ?? 0; const ey = e[1] ?? 0; const wx = e[2] ?? 0; const wy = e[3] ?? 0;
+    seg(asx, asy, ex, ey, 1.7 * k * lw, 1.4 * k * lw, col); seg(ex, ey, wx, wy, 1.4 * k * lw, 1.15 * k * lw, col);
+    F(wx - 0.5 * k, wy - 0.9 * k, 1.0 * k, 1.1 * k, sk);
+  };
+  const sleeve = cl === 0 && !L.open ? L.coat : L.coat;
+  const body = (): void => {
+    const coatD = pal.coatD;
+    armD(AR1, mono ? coatD : mixed(coatD), pal.skinD);
+    if (cl < 3) legD(B, P.f1, pal.paD, pal.shoe);
+    if (hasX(L, "pack")) { F(shx - 3.6 * k, shy - 6.8 * k, 3.0 * k, 6.4 * k, "#2a2622"); F(shx - 3.4 * k, shy - 6.2 * k, 2.4 * k, 0.6 * k, L.accent); F(shx - 3.8 * k, shy - 6.9 * k, 3.4 * k, 0.6 * k, "#14120f"); }
+    if (hasX(L, "bag")) F(shx - 2.6 * k, shy - 5.6 * k, 1.6 * k, 4.2 * k, "#2e2418");
+    if (hs === "long" || hs === "pig") F(hbk - 0.4 * k, shy - 2.6 * k, 1.9 * k, hh * 0.6 + 2.4 * k, L.hair);
+    for (let ly = hipY - 1.2 * k; ly < shy + 0.1; ly += g) {
+      const s = clamp((ly - hipY) / (shy - hipY), 0, 1); const c0 = cx(ly);
+      const fr = (s < 0.4 ? 1.25 : 1.25 + (s - 0.4) * 0.6) * k * wd * (bt[2] ?? 1) / 1.15 + (s > 0.5 ? P.br * 0.18 * k : 0);
+      const bk = (s < 0.15 ? bt[3] ?? 1.35 : s < 0.55 ? 1.15 : bt[1] ?? 1.45) * k * wd;
+      F(c0 - bk, ly, bk + fr, g, s < 0.12 && cl === 0 ? pal.pa : pal.sh);
+    }
+    if (cl < 3) legD(A, P.f0, pal.pa, pal.shoe);
+    else { legD(B, P.f1, pal.paD, pal.shoe); legD(A, P.f0, pal.pa, pal.shoe); }
+    const hemY = cl === 0 ? hipY + 0.8 * k : cl === 1 ? hipY - 1.9 * k : cl === 2 ? 8.6 * k * (kid ? 0.95 : 1) : 2.0 * k;
+    const ax = hx + (A[0] ?? 0); const bx2 = hx + (B[0] ?? 0); const ax2 = hx + (A[2] ?? 0); const bx3 = hx + (B[2] ?? 0);
+    const kmax = Math.max(ax, bx2); const kmin = Math.min(ax, bx2); const fmax = Math.max(ax2, bx3); const fmin = Math.min(ax2, bx3);
+    const hemF = cl === 3 ? Math.max(fmax + 0.6 * k, hx + 2 * k) : cl === 2 ? Math.max(kmax + 1.1 * k, hx + 1.7 * k) : cx(hemY) + 1.55 * k;
+    const hemB = (cl === 3 ? Math.min(fmin - 0.8 * k, hx - 2.2 * k) : cl === 2 ? Math.min(kmin - 1.2 * k, hx - 1.9 * k) : cx(hemY) - 1.6 * k) - P.sway * k * (cl >= 2 ? 1 : 0.3);
+    const wide = (bt[1] ?? 1.45) * k + 0.35 * k;
+    for (let ly = hemY; ly < shy + 0.5 * k; ly += g) {
+      let fr = 0; let bk = 0;
+      if (ly < hipY) { const u = (ly - hemY) / Math.max(0.01, hipY - hemY); fr = hemF + (cx(hipY) + 1.65 * k * wd - hemF) * u; bk = hemB + (cx(hipY) - 1.75 * k * wd - hemB) * Math.pow(u, 0.8); }
+      else { const s = clamp((ly - hipY) / (shy - hipY), 0, 1); const c0 = cx(ly); fr = c0 + (1.6 + s * 0.35) * k * wd * (bt[0] ?? 1.5) / 1.5 + (s > 0.5 ? P.br * 0.18 * k : 0); bk = c0 - (s < 0.5 ? 1.55 * k * wd : wide * wd); }
+      F(bk, ly, fr - bk, g, L.coat);
+      F(bk, ly, g, g, pal.coatD);
+      if (ly < hipY && cl >= 2) F((fr + bk) / 2 - 0.2 * k + P.sway * 0.25 * k, ly, g, g, pal.coatF);
+      if (L.open && ly > hipY - 0.4 * k && ly < shy - 0.4 * k) { const s = (ly - hipY) / (shy - hipY); const ww = 0.5 * k + s * 0.7 * k; F(fr - ww, ly, ww - g, g, pal.sh); F(fr - ww - g, ly, g, g, s > 0.55 ? pal.coatH : pal.coatF); }
+      else if (!L.open && ly > hemY && ly < shy - 0.6 * k && cl > 0) F(fr - g, ly, g, g, pal.coatF);
+    }
+    F(cx(shy) - 1.6 * k, shy, 2.6 * k, g, pal.coatH);
+    if (!L.open && cl > 0) for (let i = 0; i < 3; i++) F(cx(hipY + (i + 0.5) * 2.4 * k) + 1.55 * k, hipY + (i + 0.5) * 2.4 * k, g, g, pal.coatD);
+    if (hasX(L, "belt")) F(cx(hipY) - 1.7 * k, hipY - 0.2 * k, 3.4 * k, 0.6 * k, "#14181c");
+    if (hasX(L, "apron")) for (let ly = hipY - 5 * k; ly < shy - 3 * k; ly += g) F(cx(ly) - 0.3 * k, ly, 1.9 * k, g, "#f0ece0");
+    if (hasX(L, "collar") || hasX(L, "shawl")) { F(cx(shy) - 1.5 * k, shy - 0.4 * k, 1.8 * k, 1.6 * k, hasX(L, "shawl") ? L.accent : pal.coatH); }
+    if (hasX(L, "shawl")) for (let ly = shy - 3.6 * k; ly < shy + 0.2 * k; ly += g) { const u = (shy - ly) / (3.6 * k); F(cx(ly) - 1.9 * k, ly, 3.6 * k + u * 0.2 * k, g, u > 0.8 ? mixHex(L.accent, "#000", 0.3) : L.accent); }
+    // neck + head
+    F(shx - 0.4 * k, shy - 0.3 * k, 1.1 * k, 1.3 * k, pal.skinD);
+    if (hs === "hood") { F(hbk - 0.7 * k, hb - 0.5 * k, hw + 1.0 * k, hh + 1.3 * k, L.coat); F(hbk - 0.7 * k, hb - 0.5 * k, 0.8 * k, hh, pal.coatD); }
+    for (let ly = hb; ly < ht; ly += g) {
+      const r = (ly - hb) / hh;
+      const bk = hbk + (r < 0.3 ? 0.35 * k : r > 0.82 ? 0.4 * k : 0); const fr = hf - (r < 0.22 ? 0.65 * k * (1 - r / 0.22) + 0.2 * k : r > 0.86 ? 0.45 * k : 0);
+      if (hs === "hood" && r > 0.15) { F(hcx + 0.2 * k, ly, fr - hcx - 0.2 * k, g, L.skin); continue; }
+      F(bk, ly, fr - bk, g, L.skin); F(bk, ly, Math.min(hw * 0.4, fr - bk), g, pal.skinD);
+    }
+    F(hf, hcy - 0.45 * k, g, 0.7 * k, L.skin);
+    F(hf - 1.0 * k, hcy + 0.1 * k, Math.max(g, 0.45 * k), g, "#0a0a10");
+    F(hf - 1.3 * k, hcy + 0.65 * k, 0.9 * k, g, mixHex(L.hair, "#000", 0.3));
+    F(hf - 0.75 * k, hb + 0.95 * k, 0.5 * k, g, mixHex(L.skin, "#401818", 0.45));
+    if (hs !== "hood") F(hcx - 0.4 * k, hcy - 0.5 * k, 0.6 * k, 0.9 * k, pal.skinD);
+    if (hasX(L, "beard")) { F(hcx - 0.3 * k, hb - 0.4 * k, hf - hcx + 0.1 * k, 1.5 * k, L.hair); F(hf - 0.9 * k, hb + 0.8 * k, 0.6 * k, g, L.skin); }
+    if (hasX(L, "stubble")) F(hcx, hb + 0.1 * k, hf - hcx - 0.5 * k, 0.9 * k, mixHex(L.skin, L.hair, 0.4));
+    hair();
+    armD(AR0, sleeve, L.skin);
+    if (hasX(L, "basket")) { const wx = AR0[2] ?? 0; const wy = AR0[3] ?? 0; F(wx - 1.2 * k, wy - 3.0 * k, 2.8 * k, 2.2 * k, "#7a4e2a"); F(wx - 1.2 * k, wy - 0.9 * k, 2.8 * k, 0.4 * k, "#a06a3a"); F(wx - 0.9 * k, wy - 0.6 * k, 0.6 * k, 0.6 * k, "#e86a8a"); F(wx + 0.3 * k, wy - 0.4 * k, 0.6 * k, 0.6 * k, "#ffd36b"); F(wx + 0.9 * k, wy - 0.7 * k, 0.5 * k, 0.5 * k, "#e86a8a"); }
+  };
+  const mixed = (s: string): string => s;
+  const hair = (): void => {
+    const hc = L.hair; const hl = pal.hairH;
+    if (hs === "bald") { F(hbk + 0.4 * k, ht - 0.5 * k, hw - 1.0 * k, 0.5 * k, mixHex(L.skin, "#ffffff", 0.15)); }
+    else if (hs === "hood") { F(hbk - 0.6 * k, ht - 0.2 * k, hw + 0.6 * k, 0.9 * k, L.coat); F(hf - 0.3 * k, hcy + 0.9 * k, 0.6 * k, 1.4 * k, L.coat); }
+    else {
+      const thick = hs === "buzz" ? 0.55 : hs === "short" ? 0.9 : 1.2;
+      F(hbk - 0.2 * k, ht - 0.9 * k, hw + 0.1 * k, thick * k + 0.6 * k, hc);
+      F(hbk - 0.35 * k, hcy - (hs === "long" || hs === "bob" ? 1.6 : 0.3) * k, 1.4 * k, ht - hcy + (hs === "long" || hs === "bob" ? 1.0 : 0) * k, hc);
+      if (hs !== "buzz") F(hbk + 0.6 * k, ht + thick * k - 0.6 * k, hw * 0.55, 0.5 * k, hl);
+      if (hs === "tousle") { F(hf - 1.4 * k, ht - 1.5 * k, 1.3 * k, 0.9 * k, hc); F(hf - 0.6 * k, ht - 1.9 * k, 0.6 * k, 1.1 * k, hc); F(hbk + 0.3 * k, ht + 0.5 * k, 0.7 * k, 0.6 * k, hc); F(hbk + 1.6 * k, ht + 0.6 * k, 0.7 * k, 0.5 * k, hc); F(hcx + 0.6 * k, ht + 0.45 * k, 0.6 * k, 0.5 * k, hl); F(hbk - 0.6 * k, hcy + 0.4 * k, 0.6 * k, 1.0 * k, hc); }
+      if (hs === "spiky") for (let i = 0; i < 4; i++) F(hbk + i * 0.95 * k, ht + 0.2 * k, 0.6 * k, (1.0 + (i % 2) * 0.6) * k, hc);
+      if (hs === "bob") { F(hf - 1.3 * k, ht - 1.6 * k, 1.1 * k, 1.0 * k, hc); F(hbk - 0.5 * k, hb + 0.2 * k, 1.2 * k, hh * 0.6, hc); }
+      if (hs === "bun") { F(hbk - 1.0 * k, ht - 1.0 * k, 1.5 * k, 1.5 * k, hc); F(hbk - 0.8 * k, ht - 0.2 * k, 0.6 * k, 0.6 * k, hl); }
+      if (hs === "pig") { F(hbk - 1.4 * k, hcy - 0.6 * k, 1.2 * k, 2.0 * k, hc); F(hbk - 1.7 * k, hcy - 1.6 * k, 0.9 * k, 1.2 * k, hc); F(hbk - 0.2 * k, hcy + 0.3 * k, 0.5 * k, 0.5 * k, L.accent); }
+    }
+    if (hasX(L, "cap")) { F(hbk - 0.3 * k, ht - 0.7 * k, hw + 0.4 * k, 1.5 * k, "#1a2636"); F(hf - 0.2 * k, ht - 0.8 * k, 1.4 * k, 0.5 * k, "#101820"); F(hcx + 0.6 * k, ht - 0.1 * k, 0.6 * k, 0.6 * k, "#d8c84a"); }
+    if (hasX(L, "beanie")) { F(hbk - 0.3 * k, ht - 1.0 * k, hw + 0.3 * k, 1.9 * k, L.accent); F(hbk - 0.3 * k, ht - 1.0 * k, hw + 0.3 * k, 0.5 * k, mixHex(L.accent, "#000", 0.35)); }
+    if (hasX(L, "hat")) { F(hbk - 1.0 * k, ht - 0.2 * k, hw + 2.0 * k, 0.5 * k, "#14161a"); F(hbk, ht + 0.2 * k, hw - 0.2 * k, 1.4 * k, "#1c1e24"); }
+    if (hasX(L, "headband")) F(hbk - 0.2 * k, ht - 1.4 * k, hw + 0.3 * k, 0.55 * k, "#c23a4e");
+    if (hasX(L, "goggles")) { F(hbk - 0.2 * k, ht - 1.0 * k, hw + 0.2 * k, 0.5 * k, "#1a1a1a"); F(hf - 1.4 * k, ht - 1.1 * k, 1.3 * k, 0.8 * k, "#3df5d0"); }
+    if (hasX(L, "glasses")) F(hf - 1.5 * k, hcy - 0.05 * k, 1.5 * k, 0.55 * k, "#7ac8ff");
+    if (hasX(L, "visor")) F(hf - 2.0 * k, hcy - 0.05 * k, 2.2 * k, 0.6 * k, "#ffb04a");
+    if (hasX(L, "headset")) { F(hcx - 0.6 * k, hcy - 0.4 * k, 0.9 * k, 1.3 * k, "#7affc0"); F(hcx - 0.4 * k, ht - 0.3 * k, 0.5 * k, 0.6 * k, "#2a3a34"); }
+  };
+  if (rims) {
+    ox = -g; mono = pal.cool; body();
+    ox = g; mono = pal.warm; body();
+    ox = 0; mono = "";
+  }
+  body();
+  const S = (lx: number, ly: number): number[] => [X + f * lx, Y - ly];
+  const h0 = S(AR0[2] ?? 0, AR0[3] ?? 0); const h1v = S(AR1[2] ?? 0, AR1[3] ?? 0); const ee = S(hf - 1.0 * k, hcy + 0.1 * k); const sh0 = S(shx, shy);
+  return { hx: h0[0] ?? X, hy: h0[1] ?? Y, fx: h1v[0] ?? X, fy: h1v[1] ?? Y, ex: ee[0] ?? X, ey: ee[1] ?? Y, top: Y - ht - k, sx: sh0[0] ?? X, sy: sh0[1] ?? Y };
+}
 function drawPerson(c: Ctx, x: number, y: number, L: Look, f: number, ph: number, moving: boolean): void {
-  const X = Math.round(x); const Y = Math.round(y);
-  const top = Y - L.h + 6;
-  const s = moving ? Math.round(Math.sin(ph) * 2) : 0;
-  R(c, X - 2 + s, Y - 6, 1, 6, "#05080a"); R(c, X + 1 - s, Y - 6, 1, 6, "#05080a");
-  R(c, X - 2 + s, Y - 1, 2, 1, "#020304"); R(c, X + 1 - s, Y - 1, 2, 1, "#020304");
-  R(c, X - 3, top, 7, Y - 3 - top, L.coat);
-  const bh = Y - 3 - top;
-  R(c, f > 0 ? X - 3 : X + 3, top + 1, 1, bh - 1, "rgba(0,0,0,0.35)");
-  if (L.rim) { c.globalAlpha = 0.8; R(c, f > 0 ? X + 3 : X - 3, top + 1, 1, bh - 2, L.rim); c.globalAlpha = 1; }
-  R(c, X - 3, top - 1, 7, 2, L.accent);
-  R(c, X - 2, top - 6, 4, 5, L.skin); R(c, X - 2, top - 7, 4, 2, L.hair);
-  R(c, f > 0 ? X - 2 : X + 1, top - 6, 1, 4, L.hair); R(c, f > 0 ? X + 1 : X - 2, top - 4, 1, 1, "#140c10");
-  const e = L.extra;
-  if (e === "cap") { R(c, X - 3, top - 8, 6, 2, "#1a2a3a"); R(c, f > 0 ? X + 1 : X - 4, top - 7, 3, 1, "#1a2a3a"); R(c, X - 1, top - 8, 1, 1, "#d8c84a"); }
-  if (e === "headband") R(c, X - 2, top - 6, 4, 1, "#c23a4e");
-  if (e === "glasses") R(c, f > 0 ? X : X - 2, top - 4, 3, 1, "#7ac8ff");
-  if (e === "visor") { R(c, f > 0 ? X - 1 : X - 2, top - 5, 4, 1, "#ffb04a"); glowRect(c, f > 0 ? X - 1 : X - 2, top - 5, 4, 1, "#ffb04a", 0.6); R(c, X - 3, top - 7, 1, 3, L.hair); }
-  if (e === "basket") { R(c, f > 0 ? X + 3 : X - 6, Y - 10, 4, 3, "#8a5a30"); R(c, f > 0 ? X + 3 : X - 6, Y - 11, 1, 1, "#e86a8a"); R(c, f > 0 ? X + 5 : X - 4, Y - 11, 1, 1, "#ffd36b"); }
-  if (e === "bag") R(c, f > 0 ? X - 5 : X + 3, top + 2, 3, 5, "#3a2a1a");
-  if (e === "headset") { R(c, X - 3, top - 6, 1, 3, "#7affc0"); glowRect(c, X - 3, top - 6, 1, 3, "#7affc0", 0.5); }
+  const P = moving ? gait(q(ph / (Math.PI * 2), 12), false, 1) : idleP(G.t, ph + L.h);
+  figure(c, x, y, L, f, P, G.gfx > 0);
+}
+function npcPose(n: Npc, moving: boolean, t: number): Pose {
+  if (moving) return gait(q(t * n.speed * 0.055 + n.x0 * 0.01, 12), false, n.id === "ines" ? 0.6 : 1);
+  const P = idleP(t, n.x0);
+  const id = n.idle;
+  if (id === "stir") { const a = Math.sin(t * 3); P.s0 = 0.9 + 0.1 * a; P.e0 = 0.9; P.s1 = 0.7; P.e1 = 0.8; P.lean = 0.1; }
+  else if (id === "tinker") { P.s0 = 0.7 + 0.08 * Math.sin(t * 9); P.e0 = 1.0; P.s1 = 0.55; P.e1 = 1.0; P.lean = 0.22; P.tilt = 0.35; }
+  else if (id === "wave" && Math.sin(t * 1.4) > 0.3) { P.s0 = 2.6; P.e0 = 0.4 + 0.35 * Math.sin(t * 9); }
+  else if (id === "doze") { P.tilt = 0.55 + 0.05 * Math.sin(t * 0.8); P.lean = -0.02; P.s0 = 0.1; P.s1 = 0.0; }
+  else if (id === "smoke") { const on = Math.sin(t * 0.8) > 0.4; P.s0 = on ? 0.35 : 0.1; P.e0 = on ? 2.55 : 0.9; P.s1 = 0.4; P.e1 = 1.5; }
+  else if (id === "scan" && n.wait > 0) { P.s0 = 1.35; P.e0 = 0.15; }
+  else if (id === "wrist" && n.wait > 0) { P.s0 = 0.5; P.e0 = 1.6; P.tilt = 0.3; }
+  return P;
+}
+const ELOOK: Look = { coat: "#1a1f29", hair: "#2c1c14", skin: "#d6a88c", accent: "#a8a48e", rim: "#ffb466", h: 31, extra: "collar stubble", b: "m", cl: 2, hs: "tousle", sh: "#a6a28a", pa: "#13151b", shoe: "#060607", open: true, cool: "#5fd8d0" };
+function eliasPose(st: string, ph: number, t: number): Pose {
+  const g = G;
+  if (st === "walk") return gait(q(ph / (Math.PI * 2), 12), false, clamp(Math.abs(g.vx) / 58, 0.55, 1));
+  if (st === "run") return gait(q(ph / (Math.PI * 2), 10), true, 1);
+  if (st === "jump") {
+    const u = Math.round(clamp((g.vy + 180) / 360, 0, 1) * 6) / 6; const P = pose0();
+    P.t0 = 1.0 - 0.75 * u; P.k0 = 1.5 - 1.1 * u; P.t1 = 0.15 - 0.3 * u; P.k1 = 1.0 - 0.6 * u; P.f0 = -0.5; P.f1 = -0.6;
+    P.s0 = 0.75 - 0.55 * u; P.e0 = 1.3 - 0.4 * u; P.s1 = -0.6 + 0.9 * u; P.e1 = 0.9; P.lean = 0.12; P.sway = -1.2 + 2.6 * u; P.fix = 15.6 - 1.2 * (1 - u);
+    return P;
+  }
+  if (st === "land") { const cc = Math.ceil(clamp(g.landT / 0.15, 0, 1) * 4) / 4; const P = pose0(); P.t0 = 0.85 * cc + 0.05; P.k0 = 1.6 * cc + 0.08; P.t1 = 0.55 * cc - 0.05; P.k1 = 1.3 * cc + 0.1; P.lean = 0.3 * cc + 0.03; P.s0 = 0.5 * cc; P.e0 = 0.4; P.s1 = -0.3 * cc; P.sway = -0.8 * cc; return P; }
+  if (st === "interact") { const u = 1 - clamp(g.actT / 0.4, 0, 1); const r = Math.round(Math.sin(Math.PI * Math.min(1, u * 1.4)) * 6) / 6; const P = idleP(t, 0); P.s0 = 0.15 + 1.3 * r; P.e0 = 0.6 * (1 - r) + 0.08; P.lean = 0.04 + 0.08 * r; P.t0 = 0.05 + 0.25 * r; P.k0 = 0.15 + 0.2 * r; P.t1 = -0.12 * r; P.hx = 0.6 * r; return P; }
+  if (st === "examine") { const u = 1 - clamp(g.actT / 0.5, 0, 1); const d = Math.round(Math.sin(Math.PI * Math.min(1, u * 1.25)) * 6) / 6; const P = idleP(t, 0); P.t0 = 0.75 * d + 0.05; P.k0 = 1.25 * d + 0.06; P.t1 = 0.25 * d - 0.05; P.k1 = 1.1 * d + 0.06; P.lean = 0.38 * d + 0.03; P.tilt = 0.45 * d; P.s0 = 0.06 + 0.75 * d; P.e0 = 0.2 + 0.7 * d; P.s1 = 0.3 * d; P.e1 = 1.4 * d + 0.2; return P; }
+  const P = idleP(t, 0); if (Math.sin(t * 0.23) > 0.85) P.tilt = -0.18; return P;
 }
 function drawElias(c: Ctx, x: number, y: number, f: number, st: string, ph: number, t: number): void {
-  const X = Math.round(x); const Y = Math.round(y);
-  const coat = "#1c212a"; const hi = "#2e3644"; const boot = "#030304"; const skin = "#d6a88c"; const hair = "#141012";
-  const sq = st === "land" ? 1 : 0;
-  const bob = st === "idle" && Math.sin(t * 2.2) > 0.6 ? 1 : 0;
-  const lean = st === "run" ? f : 0;
-  const top = Y - 25 + sq + bob;
-  let l1 = 0; let lift1 = 0; let lift2 = 0;
-  if (st === "walk") l1 = Math.round(Math.sin(ph) * 2);
-  if (st === "run") { l1 = Math.round(Math.sin(ph) * 3); lift1 = Math.max(0, Math.round(Math.cos(ph) * 2)); lift2 = Math.max(0, -Math.round(Math.cos(ph) * 2)); }
-  if (st === "jump") { l1 = 1; lift1 = 3; lift2 = 1; }
-  R(c, X - 2 + l1, Y - 8, 2, 7 - lift1, "#0c0e12"); R(c, X + 1 - l1, Y - 8, 2, 7 - lift2, "#0c0e12");
-  R(c, X - 2 + l1 + (f > 0 ? 0 : -1), Y - 2 - lift1, 3, 2, boot); R(c, X + 1 - l1 + (f > 0 ? 0 : -1), Y - 2 - lift2, 3, 2, boot);
-  const tail = st === "run" ? 3 : st === "jump" ? 2 : st === "walk" ? (Math.sin(ph) > 0 ? 1 : 0) : 0;
-  R(c, X - 4 + lean, top + 7, 8, Y - 7 - (top + 7) + 1, coat);
-  if (tail) R(c, f > 0 ? X - 4 - tail : X + 4, Y - 13 + (st === "jump" ? -2 : 0), tail, 6, coat);
-  R(c, f > 0 ? X - 4 + lean : X + 3 + lean, top + 8, 1, Y - top - 16, "rgba(0,0,0,0.4)");
-  c.globalAlpha = 0.85; R(c, f > 0 ? X + 3 + lean : X - 4 + lean, top + 8, 1, Y - top - 17, "#ffb860"); c.globalAlpha = 0.5;
-  R(c, f > 0 ? X - 4 + lean : X + 3 + lean, top + 9, 1, Y - top - 20, "#5ff0d8"); c.globalAlpha = 1;
-  R(c, f > 0 ? X + 1 + lean : X - 2 + lean, top + 7, 1, 4, "#9aa4a8");
-  R(c, X - 1 + lean, Y - 13, 3, 1, "#0a0c10");
-  const hx = X - 2 + lean + (st === "examine" ? f : 0); const hy = top + (st === "examine" ? 1 : 0);
-  R(c, f > 0 ? X - 3 + lean : X + 2 + lean, top + 4, 2, 4, hi);
-  R(c, hx, hy, 5, 6, skin); R(c, hx, hy - 1, 5, 2, hair); R(c, f > 0 ? hx : hx + 4, hy, 1, 4, hair);
-  R(c, f > 0 ? hx + 3 : hx + 1, hy + 2, 1, 1, "#101018");
-  c.globalAlpha = 0.7; R(c, f > 0 ? hx + 4 : hx, hy + 1, 1, 4, "#ffb860"); c.globalAlpha = 1;
-  if (st === "interact") { R(c, f > 0 ? X + 3 : X - 8, top + 10, 5, 2, hi); R(c, f > 0 ? X + 8 : X - 9, top + 10, 1, 2, skin); }
-  else if (st === "examine") { R(c, f > 0 ? X + 1 : X - 2, top + 8, 2, 4, hi); R(c, f > 0 ? hx + 3 : hx + 1, hy + 5, 2, 2, skin); }
-  else { const sw = st === "walk" || st === "run" ? Math.round(Math.sin(ph) * (st === "run" ? 2 : 1)) : 0; R(c, X - 1 + lean + sw, top + 8, 2, 8, hi); R(c, X - 1 + lean + sw, top + 16, 2, 1, skin); }
+  figure(c, x, y, ELOOK, f, eliasPose(st, ph, t), true);
 }
 function drawEliasSeated(c: Ctx, x: number, y: number, t: number, photo: boolean): void {
   const X = Math.round(x); const Y = Math.round(y);
-  R(c, X - 6, Y - 12, 10, 2, "#3a2a1c"); R(c, X - 6, Y - 24, 2, 12, "#3a2a1c"); R(c, X - 5, Y - 10, 1, 10, "#2a1a10"); R(c, X + 2, Y - 10, 1, 10, "#2a1a10");
-  R(c, X - 2, Y - 14, 8, 2, "#0c0e12"); R(c, X + 5, Y - 13, 2, 11, "#0c0e12"); R(c, X + 5, Y - 2, 4, 2, "#030304");
-  R(c, X - 4, Y - 26, 8, 13, "#1c212a"); R(c, X - 4, Y - 28, 2, 4, "#2e3644");
-  c.globalAlpha = 0.8; R(c, X + 3, Y - 25, 1, 11, "#ffb860"); c.globalAlpha = 1;
-  const nod = Math.sin(t * 0.8) > 0.7 ? 1 : 0;
-  R(c, X - 1, Y - 33 + nod + 1, 5, 6, "#d6a88c"); R(c, X - 1, Y - 34 + nod + 1, 5, 2, "#141012"); R(c, X - 1, Y - 33 + nod + 1, 1, 4, "#141012");
-  R(c, X + 2, Y - 31 + nod + 1, 1, 1, "#101018");
-  if (photo) { R(c, X + 3, Y - 21, 6, 2, "#2e3644"); R(c, X + 7, Y - 24, 4, 5, "#e8e0c8"); R(c, X + 8, Y - 23, 2, 2, "#8a6a5a"); glow(c, X + 9, Y - 22, 8, "255,230,190", 0.4); }
-  else { R(c, X + 3, Y - 27, 2, 6, "#1c212a"); R(c, X + 3, Y - 33 + nod, 2, 5, "#1a1a1e"); R(c, X + 3, Y - 30 + nod, 1, 1, "#5ff0d8"); glow(c, X + 4, Y - 30 + nod, 5, "95,240,216", 0.5); }
+  R(c, X - 8, Y - 26, 2, 17, "#3a2a1c"); R(c, X - 7, Y - 26, 1, 16, "#4a3624"); R(c, X - 8, Y - 10, 13, 2, "#3a2a1c"); R(c, X - 7, Y - 8, 1, 8, "#2a1a10"); R(c, X + 3, Y - 8, 1, 8, "#2a1a10");
+  const P = pose0(); const nod = Math.sin(t * 0.8) > 0.7 ? 1 : 0;
+  P.fix = 10.0; P.t0 = 1.42; P.k0 = 1.5; P.t1 = 1.32; P.k1 = 1.36; P.lean = -0.06 + (photo ? 0.12 : 0); P.tilt = photo ? 0.3 + nod * 0.1 : 0.05 * nod; P.hx = -1.2;
+  if (photo) { P.s0 = 0.95; P.e0 = 1.05; P.s1 = 0.75; P.e1 = 1.2; } else { P.s0 = 0.3; P.e0 = 2.65; P.s1 = 0.6; P.e1 = 1.0; }
+  const j = figure(c, X, Y, ELOOK, 1, P, true);
+  if (photo) { const px = j.hx + 0.5; const py = j.hy - 3.5; R(c, px, py, 4, 5, "#e8e0c8"); R(c, px + 1, py + 1, 2, 2, "#8a6a5a"); glow(c, px + 2, py + 2, 8, "255,230,190", 0.4); }
+  else { R(c, j.hx, j.hy - 3, 1, 3, "#1a1a1e"); R(c, j.hx, j.hy - 2, 1, 1, "#5ff0d8"); glow(c, j.hx, j.hy - 2, 5, "95,240,216", 0.5); }
+}
+const PCACHE = new WeakMap<Look, Map<number, HTMLCanvasElement>>();
+let BAKE = 0;
+function pedFrame(b: Ctx, L: Look, x: number, y: number, f: number, fr: number, mk: () => Pose): void {
+  let m = PCACHE.get(L); if (!m) { m = new Map<number, HTMLCanvasElement>(); PCACHE.set(L, m); }
+  const key = SC * 1000 + fr;
+  let cv = m.get(key);
+  const hh = Math.ceil(L.h) + 8;
+  if (!cv) {
+    if (BAKE <= 0) { figure(b, x, y, L, f, mk(), false); return; }
+    BAKE--; cv = document.createElement("canvas"); cv.width = 26 * SC; cv.height = hh * SC;
+    const cx = cv.getContext("2d"); if (!cx) return;
+    cx.setTransform(SC, 0, 0, SC, 0, 0); figure(cx, 13, hh - 2, L, 1, mk(), true); m.set(key, cv);
+  }
+  if (f > 0) b.drawImage(cv, Math.round(x) - 13, Math.round(y) - hh + 2, 26, hh);
+  else { b.save(); b.translate(Math.round(x), 0); b.scale(-1, 1); b.drawImage(cv, -13, Math.round(y) - hh + 2, 26, hh); b.restore(); }
 }
 
 type Cat = "Memory chips" | "Photographs" | "Audio recordings" | "Documents" | "Access cards" | "Clues";
@@ -570,7 +741,7 @@ const PHAIR = ["#141012", "#3a2a1c", "#c8c0b0", "#6a2a3a", "#1a1a2a", "#2a1a10"]
 const PSKIN = ["#d6a88c", "#a87458", "#7a5040", "#e0c0a0", "#5a3a2a", "#c08a6a"];
 const PACC = ["#5ff0d8", "#ff6f9a", "#ffb04a", "#7ac8ff", "#c8ff6a", "#3a4450", "#5a3a4a"];
 const PRIM = ["#5ff0d8", "#ff6f9a", "#ffb04a", "#9a8cff"];
-const PEXTRA = ["", "", "", "glasses", "bag", "headset", "headband", "cap", "", "bag"];
+const PEXTRA = ["", "", "", "glasses", "bag", "headset", "beanie", "hat", "", "bag", "collar", "pack", "cap", ""];
 const PKINDS = ["coat", "umb", "neon", "hood", "umb", "kid", "couple", "worker", "rider", "dog", "synth", "coat", "hood", "neon", "coat", "umb"];
 const NEONS = ["#ff6f9a", "#5ff0d8", "#ffb04a", "#9a8cff"];
 const PSTOP: Record<LocId, [number, string][]> = { apt: [], district: [[183, "shop"], [399, "shop"], [677, "shop"], [959, "shop"], [96, "look"], [545, "look"], [721, "look"], [1110, "look"], [1258, "look"]], market: [[190, "shop"], [360, "shop"], [520, "shop"], [770, "shop"], [266, "look"], [864, "look"]] };
@@ -580,13 +751,28 @@ function mixHex(a: string, b: string, k: number): string {
   const m = (i: number): string => Math.round(p(a, i) * (1 - k) + p(b, i) * k).toString(16).padStart(2, "0");
   return "#" + m(1) + m(3) + m(5);
 }
+const PBODY = ["m", "m", "f", "f", "thin", "broad", "m", "f", "old", "thin"];
+const PHS = ["short", "tousle", "long", "bob", "bun", "buzz", "spiky", "bald", "short", "long", "bob", "tousle"];
+const PSH = ["#a8a490", "#c8c8c0", "#6a7480", "#8a3a3a", "#d0c0a0", "#3a4a5a", "#b0a0b8"];
+const PPA = ["#14161c", "#1c1a18", "#22262e", "#101418", "#2a2420", "#1a1e2a"];
 function pedLook(s: number, kind: string, lane: number): Look {
   const pk = (a: string[], k: number): string => a[Math.floor(h1(s + k) * a.length)] ?? "#222222";
-  if (lane === 2) return { coat: "#020406", hair: "#020406", skin: "#05080a", accent: "#04070a", rim: h1(s + 5) > 0.5 ? "#2a5a5a" : "#5a3a2a", h: 19 + Math.floor(h1(s + 7) * 3), extra: "" };
-  const syn = kind === "synth";
-  const L: Look = { coat: kind === "worker" ? "#3a3a20" : pk(PCOAT, 1), hair: pk(PHAIR, 2), skin: syn ? "#e6dcd4" : pk(PSKIN, 3), accent: kind === "worker" ? "#d8c020" : pk(PACC, 4), rim: syn ? "#5ff0d8" : h1(s + 5) > 0.55 ? pk(PRIM, 6) : "", h: kind === "kid" ? 13 : 17 + Math.floor(h1(s + 7) * 5), extra: kind === "worker" ? "cap" : kind === "rider" ? "visor" : kind === "hood" || kind === "kid" ? "" : pk(PEXTRA, 8) };
-  if (kind === "hood") L.hair = L.coat;
-  if (lane === 0) { const hz = "#1e4a4a"; L.coat = mixHex(L.coat, hz, 0.45); L.hair = mixHex(L.hair, hz, 0.45); L.skin = mixHex(L.skin, hz, 0.5); L.accent = mixHex(L.accent, hz, 0.4); }
+  const pn = (a: number[], k: number): number => a[Math.floor(h1(s + k) * a.length)] ?? 1;
+  const kid = kind === "kid"; const syn = kind === "synth";
+  const bd = kid ? "kid" : pk(PBODY, 11);
+  const hgt = kid ? 20 + Math.floor(h1(s + 7) * 3) : (bd === "f" || bd === "thin" || bd === "old" ? 27 : 28) + Math.floor(h1(s + 7) * 5);
+  let hs = kind === "hood" ? "hood" : syn ? pk(["short", "bob", "buzz"], 12) : kid ? pk(["short", "pig", "bob", "tousle"], 12) : pk(PHS, 12);
+  if (bd === "old" && hs === "spiky") hs = "short";
+  if (lane === 2) return { coat: "#020406", hair: "#020406", skin: "#05080a", accent: "#04070a", rim: "#071014", cool: "#060c10", h: hgt, extra: h1(s + 8) > 0.6 ? "hat" : "", b: bd, cl: pn([1, 2, 2, 3], 13), hs, sh: "#030507", pa: "#020304", shoe: "#010203" };
+  const L: Look = {
+    coat: kind === "worker" ? "#3a3a20" : pk(PCOAT, 1), hair: bd === "old" ? pk(["#c8c0b0", "#8a8a8a", "#e0dcd4"], 2) : pk(PHAIR, 2), skin: syn ? "#e6dcd4" : pk(PSKIN, 3),
+    accent: kind === "worker" ? "#d8c020" : pk(PACC, 4), rim: syn ? "#5ff0d8" : h1(s + 5) > 0.45 ? pk(PRIM, 6) : "",
+    h: Math.round(hgt * (lane === 0 ? 0.86 : 1)),
+    extra: kind === "worker" ? "cap belt" : kind === "rider" ? "visor pack" : kind === "hood" ? (h1(s + 8) > 0.5 ? "bag" : "") : kid ? (h1(s + 8) > 0.5 ? "boots" : "") : pk(PEXTRA, 8),
+    b: bd, cl: kind === "worker" ? 1 : kind === "rider" ? 1 : kid ? pn([1, 2], 13) : pn([0, 1, 1, 2, 2, 2, 3], 13), hs,
+    sh: syn ? "#dfe6e6" : pk(PSH, 9), pa: pk(PPA, 10), open: h1(s + 14) > 0.5,
+  };
+  if (lane === 0) { const hz = "#1e4a4a"; L.coat = mixHex(L.coat, hz, 0.45); L.hair = mixHex(L.hair, hz, 0.45); L.skin = mixHex(L.skin, hz, 0.5); L.accent = mixHex(L.accent, hz, 0.4); L.sh = mixHex(L.sh ?? L.accent, hz, 0.5); L.pa = mixHex(L.pa ?? "#14161c", hz, 0.4); L.cool = "#2a6a6a"; }
   return L;
 }
 function pedKind(p: Ped, kind0: string): void {
@@ -650,40 +836,55 @@ function umbrella(b: Ctx, cx: number, y: number, r: number, col: string, rim: st
   if (rim) { R(b, cx - r, y, 2 * r + 1, 1, rim); glowRect(b, cx - r, y - Math.round(r * 0.5), 2 * r + 1, Math.round(r * 0.5) + 1, rim, 0.4); }
   R(b, cx, y + 1, 1, 7, "#0a0c10");
 }
+function pedPose(fr: number, sd: number): Pose {
+  if (fr < 10) return gait(fr / 10, false, 1);
+  const P = pose0();
+  if (fr === 10 || fr === 11) { P.br = fr === 10 ? 1 : 0; P.s0 = 0.06 + 0.03 * P.br; P.s1 = -0.06; P.hx = 0.2 * Math.sin(sd); P.k0 = 0.12; }
+  else if (fr === 12) { P.s0 = 0.35; P.e0 = 2.55; P.s1 = 0.4; P.e1 = 1.5; P.k1 = 0.25; }
+  else if (fr === 13) { P.s0 = 0.55; P.e0 = 1.9; P.s1 = 0.1; P.tilt = 0.35; }
+  else if (fr === 14) { P.s0 = 1.15; P.e0 = 0.25; P.s1 = 1.05; P.e1 = 0.3; P.lean = 0.16; P.t0 = 0.18; P.k0 = 0.2; P.t1 = -0.12; P.k1 = 0.12; }
+  return P;
+}
 function drawPed(b: Ctx, p: Ped, x: number, y: number, t: number): void {
   const L = p.look; const mv = p.st === "walk"; let f = p.dir;
   if (p.gl > 0) f = G.px > p.x ? 1 : -1;
-  const ph = t * (4 + p.sp * 0.12) + p.seed;
-  const top = y - L.h + 6;
+  const ph = t * (1.5 + p.sp * 0.36) + p.seed;
+  const wf = Math.floor(q(ph / (Math.PI * 2), 10) * 10 + 0.001);
+  const sd = p.seed * 0.37;
+  const idf = Math.sin(t * 1.7 + sd) > 0 ? 10 : 11;
+  const fig = (L2: Look, xx: number, fr: number, yy: number): void => pedFrame(b, L2, xx, yy, f, fr, (): Pose => pedPose(fr, sd));
+  const top = y - L.h;
   if (p.kind === "rider") {
-    R(b, x - 8, y - 4, 16, 2, "#1a2228"); R(b, x - 8, y - 2, 4, 2, "#05080a"); R(b, x + 4, y - 2, 4, 2, "#05080a");
-    R(b, x + f * 7, y - 11, 1, 8, "#2a3238"); R(b, x - f * 9 - 3, y - 12, 6, 6, "#a8382e"); R(b, x - f * 9 - 3, y - 12, 6, 1, "#e8584a");
-    drawPerson(b, x, y - 4, L, f, 0, false);
-    R(b, x + f * 8, y - 10, 1, 1, "#fff2c0"); glow(b, x + f * 10, y - 10, 12, "255,240,200", 0.8); glow(b, x - f * 9, y - 6, 6, "255,80,80", 0.6);
+    const dy = y - 3;
+    R(b, x - 8, dy, 17, 1, "#1a2228"); R(b, x - 8, dy + 1, 17, 1, "#0c1216"); R(b, x - 9, y - 2, 3, 2, "#05080a"); R(b, x + 6, y - 2, 3, 2, "#05080a");
+    R(b, x + f * 8, dy - 15, 1, 15, "#2a3238"); R(b, x + f * 6, dy - 16, 4, 1, "#3a444a");
+    fig(L, x - f, 14, dy);
+    R(b, x + f * 8, dy - 12, 1, 1, "#fff2c0"); glow(b, x + f * 10, dy - 12, 12, "255,240,200", 0.8); glow(b, x - f * 8, dy, 5, "255,80,80", 0.6);
     return;
   }
-  if (p.kind === "couple") { drawPerson(b, x - 3, y, L, f, ph, mv); drawPerson(b, x + 3, y, p.look2, f, ph + 1.7, mv); umbrella(b, x, top - 2, 11, "#1a1420", "#ff6f9a"); return; }
+  if (p.kind === "couple") { fig(L, x - 4, mv ? wf : idf, y); fig(p.look2, x + 4, mv ? (wf + 5) % 10 : idf, y); umbrella(b, x, top - 3, 13, "#1a1420", "#ff6f9a"); return; }
   if (p.kind === "vendor") {
-    R(b, x + 4, y - 11, 18, 9, "#3a2616"); R(b, x + 4, y - 12, 18, 1, "#c85a2a"); R(b, x + 6, y - 2, 3, 2, "#05080a"); R(b, x + 17, y - 2, 3, 2, "#05080a");
-    R(b, x + 13, y - 30, 1, 18, "#1a1a1a");
-    for (let i = -12; i <= 12; i++) R(b, x + 13 + i, y - 31 - Math.round(Math.sqrt(144 - i * i) * 0.35), 1, 2, ((i + 12) % 6) < 3 ? "#d8402a" : "#e8d0a0");
-    glow(b, x + 13, y - 14, 14, "255,170,90", 0.6);
-    for (let k = 0; k < 3; k++) { const q = (t * 0.6 + k / 3) % 1; b.globalAlpha = 0.35 * (1 - q); R(b, x + 8 + k * 4 + Math.sin(t * 2 + k) * 1.5, y - 13 - q * 12, 2, 2, "#e8e0d0"); b.globalAlpha = 1; }
-    drawPerson(b, x, y, L, 1, 0, false); return;
+    R(b, x + 5, y - 14, 20, 11, "#3a2616"); R(b, x + 5, y - 15, 20, 1, "#c85a2a"); R(b, x + 5, y - 9, 20, 1, "#2a1a10"); R(b, x + 7, y - 3, 3, 3, "#05080a"); R(b, x + 20, y - 3, 3, 3, "#05080a");
+    R(b, x + 15, y - 38, 1, 23, "#1a1a1a");
+    for (let i = -14; i <= 14; i++) R(b, x + 15 + i, y - 39 - Math.round(Math.sqrt(196 - i * i) * 0.35), 1, 2, ((i + 14) % 7) < 3 ? "#d8402a" : "#e8d0a0");
+    glow(b, x + 15, y - 17, 16, "255,170,90", 0.6);
+    for (let k = 0; k < 3; k++) { const qq = (t * 0.6 + k / 3) % 1; b.globalAlpha = 0.35 * (1 - qq); R(b, x + 9 + k * 4 + Math.sin(t * 2 + k) * 1.5, y - 16 - qq * 12, 2, 2, "#e8e0d0"); b.globalAlpha = 1; }
+    f = 1; fig(L, x, idf, y); return;
   }
-  drawPerson(b, x, y, L, f, ph, mv);
-  if (p.kind === "hood") { R(b, x - 3, top - 8, 6, 2, L.coat); R(b, f > 0 ? x - 3 : x + 2, top - 7, 1, 5, L.coat); }
-  if (p.kind === "umb" || p.kind === "neon") umbrella(b, x + f, top - 3, 8, p.lane === 0 ? "#141a20" : "#181c24", p.kind === "neon" ? NEONS[p.seed % 4] ?? "#5ff0d8" : "");
-  if (p.kind === "synth") { if (Math.sin(t * 0.9 + p.seed) > 0.75) { R(b, f > 0 ? x + 1 : x - 2, top - 4, 1, 1, "#5ff0d8"); glow(b, x, top - 4, 4, "95,240,216", 0.6); } R(b, x - 2, top - 1, 4, 1, "#3a8a80"); }
+  const fr = mv ? wf : p.st === "smoke" ? 12 : p.st === "look" ? 13 : idf;
   if (p.kind === "dog") {
-    const dx = x + f * 9; const bb = mv ? Math.round(Math.abs(Math.sin(ph * 1.5))) : 0;
-    R(b, dx - 3, y - 4 - bb, 6, 3, "#4a3220"); R(b, f > 0 ? dx + 2 : dx - 4, y - 6 - bb, 2, 3, "#4a3220"); R(b, f > 0 ? dx - 4 : dx + 3, y - 5 - bb, 1, 1, "#4a3220");
-    R(b, dx - 3, y - 1, 1, 1, "#2a1a10"); R(b, dx + 2, y - 1, 1, 1, "#2a1a10");
-    for (let k = 0; k < 6; k++) R(b, x + f * (3 + k), top + 5 + Math.round((y - 6 - top - 5) * k / 6), 1, 1, "#0a0c10");
+    const dx = x + f * 11; const bb = mv ? Math.round(Math.abs(Math.sin(ph * 1.5))) : 0; const lg = mv ? Math.round(Math.sin(ph * 2)) : 0;
+    R(b, dx - 4, y - 6 - bb, 8, 3, "#4a3220"); R(b, dx - 4, y - 6 - bb, 8, 1, "#5a4230"); R(b, f > 0 ? dx + 3 : dx - 5, y - 8 - bb, 2, 3, "#4a3220"); R(b, f > 0 ? dx + 4 : dx - 6, y - 7 - bb, 2, 1, "#3a2414"); R(b, f > 0 ? dx - 6 : dx + 4, y - 7 - bb, 2, 1, "#4a3220");
+    R(b, dx - 3 + lg, y - 3, 1, 3, "#3a2414"); R(b, dx + 2 - lg, y - 3, 1, 3, "#3a2414");
   }
-  if (p.st === "smoke") { const hx = x + f * 4; const hy = top + 3; R(b, hx, hy, 1, 1, "#ff6a3a"); for (let k = 0; k < 4; k++) { const q = (t * 0.45 + k / 4 + p.seed * 0.1) % 1; b.globalAlpha = 0.4 * (1 - q); R(b, hx + Math.sin(t + k * 2) * 2 + q * f * 4, hy - 2 - q * 14, 2 + Math.round(q * 2), 2, "#cfe8e4"); } b.globalAlpha = 1; }
-  if (p.st === "look") { R(b, x - 2, top - 8, 4, 1, L.hair); glow(b, x + f, top - 4, 6, "255,111,154", 0.35); }
-  if (p.bubT > 0 && p.st === "chat") { const by = top - 16; R(b, x - 4, by, 9, 5, "#dfe9e8"); R(b, x - 1, by + 5, 1, 1, "#dfe9e8"); const n = Math.floor(t * 4) % 4; for (let k = 0; k < 3; k++) if (k < n) R(b, x - 2 + k * 2, by + 2, 1, 1, "#203038"); }
+  fig(L, x, fr, y);
+  const j = { ex: x + f * Math.round(L.h * 0.05), ey: y - Math.round(L.h * 0.885), hx: x + f * Math.round(L.h * 0.12), hy: y - Math.round(L.h * 0.52) };
+  if (p.kind === "dog") { const dx = x + f * 11; for (let k = 0; k < 6; k++) R(b, j.hx + (dx - f * 3 - j.hx) * k / 6, j.hy + (y - 7 - j.hy) * k / 6, 1, 1, "#0a0c10"); }
+  if (p.kind === "umb" || p.kind === "neon") { R(b, x + f * 2, top + 7, 1, Math.round(L.h * 0.32), "#0a0c10"); umbrella(b, x + f * 2, top - 2, 10, p.lane === 0 ? "#141a20" : "#181c24", p.kind === "neon" ? NEONS[p.seed % 4] ?? "#5ff0d8" : ""); }
+  if (p.kind === "synth" && Math.sin(t * 0.9 + p.seed) > 0.75) { R(b, j.ex, j.ey, 1, 1, "#5ff0d8"); glow(b, j.ex, j.ey, 4, "95,240,216", 0.6); }
+  if (p.st === "smoke") { const hx = j.ex + f * 2; const hy = j.ey + 3; R(b, hx, hy, 1, 1, "#ff6a3a"); glow(b, hx, hy, 3, "255,120,60", 0.5); for (let k = 0; k < 4; k++) { const qq = (t * 0.45 + k / 4 + p.seed * 0.1) % 1; b.globalAlpha = 0.4 * (1 - qq); R(b, hx + Math.sin(t + k * 2) * 2 + qq * f * 4, hy - 2 - qq * 14, 2 + Math.round(qq * 2), 2, "#cfe8e4"); } b.globalAlpha = 1; }
+  if (p.st === "look") { R(b, j.ex + f * 2, j.ey + 5, 1, 2, "#ffd0e0"); glow(b, j.ex + f * 2, j.ey + 4, 7, "255,111,154", 0.45); }
+  if (p.bubT > 0 && p.st === "chat") { const by = top - 9; R(b, x - 4, by, 9, 5, "#dfe9e8"); R(b, x - 1, by + 5, 1, 1, "#dfe9e8"); const n = Math.floor(t * 4) % 4; for (let k = 0; k < 3; k++) if (k < n) R(b, x - 2 + k * 2, by + 2, 1, 1, "#203038"); }
 }
 function drawPeds(b: Ctx, cam: number, lane: number): void {
   const t = G.t; const ly = lane === 0 ? (G.loc === "market" ? FEET - 3 : FEET - 7) : FEET;
@@ -710,17 +911,17 @@ type Game = {
 };
 
 const LK: Record<string, Look> = {
-  ines: { coat: "#5a3a5a", hair: "#d8d8e0", skin: "#b08a70", accent: "#e86a8a", rim: "#ffb04a", h: 18, extra: "basket" },
-  dex: { coat: "#c8621f", hair: "#ff8a3d", skin: "#c09a80", accent: "#3df5d0", rim: "#5ff0d8", h: 20, extra: "bag" },
-  bram: { coat: "#2a3a4a", hair: "#202830", skin: "#c8a088", accent: "#d8c84a", rim: "#7ac8ff", h: 23, extra: "cap" },
-  lulu: { coat: "#e8c84a", hair: "#e86a8a", skin: "#d8a88c", accent: "#3a5a8a", rim: "#ffd36b", h: 15, extra: "" },
-  hiro: { coat: "#e8e0d0", hair: "#202020", skin: "#c8a080", accent: "#c23a4e", rim: "#ffb04a", h: 21, extra: "headband" },
-  pix: { coat: "#2a4a4a", hair: "#7ac8ff", skin: "#d0a890", accent: "#ffd36b", rim: "#3df5d0", h: 20, extra: "glasses" },
-  oyelo: { coat: "#6a2a5a", hair: "#101010", skin: "#8a5a40", accent: "#ffb04a", rim: "#ffb04a", h: 22, extra: "" },
-  tam: { coat: "#3a4a3a", hair: "#606060", skin: "#b88a70", accent: "#a0a060", rim: "#ffb04a", h: 20, extra: "" },
-  rook: { coat: "#2a2a3a", hair: "#8a6aaa", skin: "#a8a0b0", accent: "#7affc0", rim: "#7affc0", h: 21, extra: "headset" },
-  nova: { coat: "#e0e4e4", hair: "#5ff0d8", skin: "#c89a8a", accent: "#ffb04a", rim: "#ff6f9a", h: 21, extra: "visor" },
-  ped: { coat: "#04080a", hair: "#04080a", skin: "#0c1416", accent: "#04080a", rim: "", h: 19, extra: "" },
+  ines: { coat: "#5a3a5a", hair: "#d8d8e0", skin: "#b08a70", accent: "#e86a8a", rim: "#ffb04a", h: 27, extra: "basket shawl", b: "old", cl: 3, hs: "bun", sh: "#8a5a7a", pa: "#2a1e2a", open: false },
+  dex: { coat: "#c8621f", hair: "#ff8a3d", skin: "#c09a80", accent: "#3df5d0", rim: "#5ff0d8", h: 30, extra: "goggles pack", b: "thin", cl: 1, hs: "spiky", sh: "#2a2a30", pa: "#1a1c22", open: true },
+  bram: { coat: "#2a3a4a", hair: "#202830", skin: "#c8a088", accent: "#d8c84a", rim: "#7ac8ff", h: 33, extra: "cap belt", b: "broad", cl: 2, hs: "buzz", sh: "#3a4a5a", pa: "#141c26", open: false },
+  lulu: { coat: "#e8c84a", hair: "#e86a8a", skin: "#d8a88c", accent: "#3a5a8a", rim: "#ffd36b", h: 22, extra: "boots", b: "kid", cl: 2, hs: "pig", sh: "#3a5a8a", pa: "#2a3a5a", shoe: "#c8a83a", open: false },
+  hiro: { coat: "#e8e0d0", hair: "#202020", skin: "#c8a080", accent: "#c23a4e", rim: "#ffb04a", h: 30, extra: "headband", b: "m", cl: 1, hs: "short", sh: "#d8d0c0", pa: "#202024", open: false },
+  pix: { coat: "#2a4a4a", hair: "#7ac8ff", skin: "#d0a890", accent: "#ffd36b", rim: "#3df5d0", h: 28, extra: "glasses bag", b: "f", cl: 0, hs: "bob", sh: "#ffd36b", pa: "#1a2a2e", open: true },
+  oyelo: { coat: "#6a2a5a", hair: "#101010", skin: "#8a5a40", accent: "#ffb04a", rim: "#ffb04a", h: 32, extra: "beard", b: "broad", cl: 3, hs: "bald", sh: "#ffb04a", pa: "#2a1028", open: false },
+  tam: { coat: "#3a4a3a", hair: "#909090", skin: "#b88a70", accent: "#a0a060", rim: "#ffb04a", h: 28, extra: "", b: "old", cl: 1, hs: "short", sh: "#a0a060", pa: "#22261e", open: true },
+  rook: { coat: "#2a2a3a", hair: "#8a6aaa", skin: "#a8a0b0", accent: "#7affc0", rim: "#7affc0", h: 33, extra: "headset", b: "thin", cl: 2, hs: "long", sh: "#3a3a50", pa: "#14141e", open: true },
+  nova: { coat: "#e0e4e4", hair: "#5ff0d8", skin: "#c89a8a", accent: "#ffb04a", rim: "#ff6f9a", h: 30, extra: "visor", b: "f", cl: 2, hs: "bob", sh: "#ff6f9a", pa: "#2a2a34", open: false },
+  ped: { coat: "#04080a", hair: "#04080a", skin: "#0c1416", accent: "#04080a", rim: "", h: 29, extra: "" },
 };
 const NPCX: Record<string, { idle: string; stops: number[]; barks: string[] }> = {
   ines: { idle: "", stops: [210, 560], barks: ["Flowers! Real petals!", "Mind the puddles, detective."] },
@@ -1261,7 +1462,7 @@ function update(dt: number): void {
   else if (g.vy > 0) for (const p of PLATS[g.loc]) if (g.px >= p.x0 && g.px <= p.x1 && prevY <= p.y + 0.01 && g.py >= p.y) { g.py = p.y; g.vy = 0; g.grounded = true; }
   if (wasAir && g.grounded) { g.landT = fallV > 150 ? 0.15 : 0.08; land(); if (fallV > 120) puff(g.px, g.py, 5); }
   if (g.grounded && Math.abs(g.vx) > 8) {
-    g.walk += dt * (Math.abs(g.vx) / 56) * 9;
+    g.walk += dt * Math.abs(g.vx) * 0.21;
     const sp = Math.floor(g.walk / Math.PI); if (sp !== g.stepPh) { g.stepPh = sp; step(); if (Math.abs(g.vx) > 80) puff(g.px - g.facing * 3, g.py, 1); }
   }
   g.landT = Math.max(0, g.landT - dt); g.actT = Math.max(0, g.actT - dt);
@@ -1356,11 +1557,11 @@ function waterPlane(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasEle
   for (let y = top; y < H; y++) {
     const d = y - top; const src = wl - 1 - Math.floor(d * 0.85); if (src < 1) break;
     const off = Math.round(Math.sin(y * 0.8 + t * 2.4) * (0.5 + d * 0.04));
-    b.globalAlpha = 0.46 - (d / depth) * 0.2; b.drawImage(rbuf, 0, src, W, 1, off, y, W, 1);
+    b.globalAlpha = 0.46 - (d / depth) * 0.2; b.drawImage(rbuf, 0, src * SC, W * SC, SC, off, y, W, 1);
   }
   b.save(); b.globalCompositeOperation = "lighter";
   const bands = G.gfx ? 4 : 2;
-  for (let k = 0; k < bands; k++) { b.globalAlpha = 0.2 - k * 0.025; b.drawImage(rbuf, 0, wl - 10 - k * 21, W, 6, 0, top + k * 2, W, depth - k * 2); }
+  for (let k = 0; k < bands; k++) { b.globalAlpha = 0.2 - k * 0.025; b.drawImage(rbuf, 0, (wl - 10 - k * 21) * SC, W * SC, 6 * SC, 0, top + k * 2, W, depth - k * 2); }
   b.restore(); b.globalAlpha = 1;
   const gw = b.createLinearGradient(0, top, 0, H); gw.addColorStop(0, "rgba(4,16,18,0.05)"); gw.addColorStop(1, "rgba(2,8,10,0.4)"); b.fillStyle = gw; b.fillRect(0, top, W, depth);
   for (let i = 0; i < 26; i++) { const x = ((h1(i * 3.3) * (W + 40) - cam * 1.1 + t * 3 * ((i % 3) - 1)) % (W + 40) + W + 40) % (W + 40) - 20; const y = top + 2 + h1(i * 7.7) * (depth - 4); b.globalAlpha = 0.18 + 0.14 * Math.sin(t * 2 + i); R(b, x, y, 3 + (i % 4) * 2, 1, "#9fd8d0"); }
@@ -1411,16 +1612,16 @@ function rain(b: Ctx, a: number): void {
   for (const d of G.drops) for (let k = 0; k < d.l; k++) b.fillRect(Math.round(d.x - 30 + k * 0.22), Math.round(d.y - k), 1, 1);
 }
 function reflect(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement, a: number, puddles: number[], cam: number): void {
-  rc.clearRect(0, 0, W, H); rc.drawImage(buf, 0, 0);
+  rc.setTransform(1, 0, 0, 1, 0, 0); rc.clearRect(0, 0, rbuf.width, rbuf.height); rc.drawImage(buf, 0, 0);
   b.save(); b.beginPath(); b.rect(0, FEET + 1, W, H - FEET); b.clip();
-  b.globalAlpha = a; b.setTransform(1, 0, 0, -0.25, 0, FEET * 1.25); b.drawImage(rbuf, 0, 0); b.restore();
+  b.globalAlpha = a; b.setTransform(1, 0, 0, -0.25, 0, FEET * 1.25 * SC); b.drawImage(rbuf, 0, 0); b.restore();
   for (const px of puddles) {
     const sx = Math.round(px - cam); const w = 26 + (px % 3) * 8;
     if (sx > W || sx + w < 0) continue;
     const py = px % 2 === 0 ? FEET + 2 : FEET + 11;
     b.save(); b.beginPath(); b.rect(sx + 4, py, w - 8, 1); b.rect(sx, py + 1, w, 3); b.rect(sx + 3, py + 4, w - 6, 1); b.clip();
     R(b, sx, py, w, 5, "#02060a");
-    b.globalAlpha = 0.85; b.setTransform(1, 0, 0, -0.25, Math.round(Math.sin(G.t * 1.7 + px) * 0.6), FEET * 1.25); b.drawImage(rbuf, 0, 0); b.restore();
+    b.globalAlpha = 0.85; b.setTransform(1, 0, 0, -0.25, Math.round(Math.sin(G.t * 1.7 + px) * 0.6) * SC, FEET * 1.25 * SC); b.drawImage(rbuf, 0, 0); b.restore();
     const ph = (G.t * 1.6 + px * 0.013) % 1; const rr = Math.round(ph * 4);
     b.globalAlpha = 0.4 * (1 - ph); R(b, sx + w / 2 - rr, py + 2, rr * 2 + 1, 1, "#c8f0e8"); b.globalAlpha = 1;
   }
@@ -1437,22 +1638,21 @@ function drawNpcs(b: Ctx, cam: number): void {
   const t = G.t;
   for (const n of G.npcs) {
     if (n.loc !== G.loc) continue;
-    const sx = n.x - cam; if (sx < -20 || sx > W + 20) continue;
+    const sx = n.x - cam; if (sx < -24 || sx > W + 24) continue;
     const moving = n.speed > 0 && n.wait <= 0;
     const f = n.speed === 0 ? (G.px > n.x ? 1 : -1) : n.wait > 0 && n.peek ? (Math.sin(t * 1.3 + n.x) > 0 ? 1 : -1) : n.dir;
-    drawPerson(b, sx, n.y, n.look, f, t * n.speed * 0.4, moving);
-    idleFx(b, n, sx, f, t);
+    const j = figure(b, sx, n.y, n.look, f, npcPose(n, moving, t), G.gfx > 0);
+    idleFx(b, n, j, f, t);
   }
 }
-function idleFx(b: Ctx, n: Npc, sx: number, f: number, t: number): void {
-  const X = Math.round(sx); const Y = Math.round(n.y); const top = Y - n.look.h + 6;
-  if (n.idle === "stir") { const a = Math.round(Math.sin(t * 3) * 2); R(b, X + f * 4 + a, top - 1, 1, 5, "#9aa4a8"); R(b, X + f * 3 + a, top + 3, 3, 1, "#c8d0d4"); for (let k = 0; k < 3; k++) { const p = (t * 0.6 + k / 3) % 1; b.globalAlpha = 0.25 * (1 - p); R(b, X + f * 6 + Math.round(Math.sin(t * 2 + k) * 2), top - p * 16, 2, 1, "#e8f0f0"); } b.globalAlpha = 1; }
-  else if (n.idle === "tinker") { R(b, X + f * 5, top + 7, 3, 2, "#3a4a4a"); if (h1(Math.floor(t * 9) + n.x) > 0.72) { R(b, X + f * 6, top + 6, 1, 1, "#fff2a0"); glow(b, X + f * 6, top + 6, 6, "255,230,140", 0.8); } }
-  else if (n.idle === "wave") { if (Math.sin(t * 1.4) > 0.3) { const w = Math.round(Math.sin(t * 9)); R(b, X + f * 4 + w, top - 6, 2, 6, n.look.coat); R(b, X + f * 4 + w, top - 8, 2, 2, n.look.skin); } }
-  else if (n.idle === "doze") { const zp = (t * 0.5) % 1; b.globalAlpha = 1 - zp; ptext(b, "Z", X + 3 + Math.round(zp * 5), top - 12 - Math.round(zp * 10), "#cfe8ff", 1); b.globalAlpha = 1; }
-  else if (n.idle === "smoke") { const on = Math.sin(t * 0.8) > 0.6; R(b, X + f * 3, top - 3, 1, 1, on ? "#ffb04a" : "#6a3a1a"); if (on) glow(b, X + f * 3, top - 3, 4, "255,170,80", 0.7); for (let k = 0; k < 3; k++) { const p = (t * 0.4 + k / 3) % 1; b.globalAlpha = 0.25 * (1 - p); R(b, X + f * 3 + Math.round(Math.sin(t + k * 2) * 2), top - 5 - p * 14, 2, 1, "#c8d8d8"); } b.globalAlpha = 1; }
-  else if (n.idle === "scan" && n.wait > 0) { b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.12; b.fillStyle = "#e8f4ff"; b.beginPath(); b.moveTo(X + f * 3, top + 5); b.lineTo(X + f * 42, FEET); b.lineTo(X + f * 16, FEET); b.closePath(); b.fill(); b.restore(); R(b, X + f * 3, top + 5, 2, 1, "#ffffff"); }
-  else if (n.idle === "wrist" && n.wait > 0) { R(b, X + f * 2, top + 4, 3, 1, "#3df5d0"); glow(b, X + f * 3, top + 4, 5, "61,245,208", 0.6); }
+function idleFx(b: Ctx, n: Npc, j: Joints, f: number, t: number): void {
+  const hx = Math.round(j.hx); const hy = Math.round(j.hy); const top = Math.round(j.top);
+  if (n.idle === "stir") { R(b, hx, hy - 1, 1, 6, "#9aa4a8"); R(b, hx - 1, hy + 4, 3, 1, "#c8d0d4"); for (let k = 0; k < 3; k++) { const p = (t * 0.6 + k / 3) % 1; b.globalAlpha = 0.25 * (1 - p); R(b, hx + f * 2 + Math.round(Math.sin(t * 2 + k) * 2), hy + 2 - p * 18, 2, 1, "#e8f0f0"); } b.globalAlpha = 1; }
+  else if (n.idle === "tinker") { R(b, hx - 1, hy - 1, 3, 2, "#3a4a4a"); if (h1(Math.floor(t * 9) + n.x) > 0.72) { R(b, hx + f, hy - 2, 1, 1, "#fff2a0"); glow(b, hx + f, hy - 2, 6, "255,230,140", 0.8); } }
+  else if (n.idle === "doze") { const zp = (t * 0.5) % 1; b.globalAlpha = 1 - zp; ptext(b, "Z", Math.round(j.ex) + 3 + Math.round(zp * 5), top - 6 - Math.round(zp * 10), "#cfe8ff", 1); b.globalAlpha = 1; }
+  else if (n.idle === "smoke") { const on = Math.sin(t * 0.8) > 0.4; R(b, hx + f, hy - 1, 1, 1, on ? "#ffb04a" : "#6a3a1a"); if (on) glow(b, hx + f, hy - 1, 4, "255,170,80", 0.7); for (let k = 0; k < 3; k++) { const p = (t * 0.4 + k / 3) % 1; b.globalAlpha = 0.25 * (1 - p); R(b, hx + f + Math.round(Math.sin(t + k * 2) * 2), hy - 3 - p * 14, 2, 1, "#c8d8d8"); } b.globalAlpha = 1; }
+  else if (n.idle === "scan" && n.wait > 0) { b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.12; b.fillStyle = "#e8f4ff"; b.beginPath(); b.moveTo(hx, hy); b.lineTo(hx + f * 44, FEET); b.lineTo(hx + f * 16, FEET); b.closePath(); b.fill(); b.restore(); R(b, hx - 1, hy, 2, 1, "#ffffff"); }
+  else if (n.idle === "wrist" && n.wait > 0) { R(b, hx - 1, hy, 2, 1, "#3df5d0"); glow(b, hx, hy, 5, "61,245,208", 0.6); }
 }
 function drawApt(b: Ctx, cc: Caches, cam: number, seated: boolean): void {
   const t = G.t;
@@ -1575,6 +1775,7 @@ function drawMarketFront(b: Ctx, cam: number): void {
   }
 }
 function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement, cc: Caches): void {
+  BAKE = 14;
   const g = G; const t = g.t;
   if (g.scene === "menu") { const c = t * 22; city(b, cc, tri(c * 0.15, FW - W - 2), tri(c * 0.45, MW - W - 2), t, c); rain(b, 1); return; }
   if (g.scene === "glitch") { renderGlitch(b, g.sceneT); return; }
@@ -1595,7 +1796,7 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     reflect(b, rc, buf, rbuf, 0.1, [], cam);
     if (seated && g.sceneT < 9) { b.globalAlpha = clamp(1 - (g.sceneT - 8) / 0.9, 0, 1); R(b, 0, 0, W, H, "#000"); b.globalAlpha = 1; }
   } else if (g.loc === "district") {
-    b.setTransform(1, 0, 0, 1, 0, -YO);
+    b.setTransform(SC, 0, 0, SC, 0, -YO * SC);
     city(b, cc, cam * 0.15, cam * 0.45, t, cam);
     b.drawImage(cc.dist, cam, 0, W, H, 0, 0, W, H);
     if (g.gfx) { const hz = b.createLinearGradient(0, YO, 0, FEET); hz.addColorStop(0, "rgba(70,170,145,0.4)"); hz.addColorStop(0.65, "rgba(50,140,120,0.12)"); hz.addColorStop(1, "rgba(40,110,100,0)"); b.fillStyle = hz; b.fillRect(0, YO, W, FEET - YO); }
@@ -1611,7 +1812,7 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     glow(b, g.px - cam, g.py - 12, 18, "255,190,120", 0.16);
     drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
     drawParts(b, cam);
-    b.setTransform(1, 0, 0, 1, 0, 0);
+    b.setTransform(SC, 0, 0, SC, 0, 0);
     waterPlane(b, rc, buf, rbuf, cam, t);
     rain(b, 1);
   } else {
@@ -1665,21 +1866,21 @@ function renderGlitch(b: Ctx, T: number): void {
 }
 
 // ---------- hi-res overlay ----------
-type Port = { bg: string; skin: string; hair: string; coat: string; eye: string; st: number; ex: string };
+type Port = { bg: string; skin: string; hair: string; coat: string; eye: string; st: number; ex: string; hs: string; sh: string; rim: string };
 const PORTS: Record<string, Port> = {
-  ELIAS: { bg: "#1a2a30", skin: "#d6a88c", hair: "#141012", coat: "#1c212a", eye: "#8ab0c0", st: 0, ex: "collar" },
-  NOVA: { bg: "#2a1420", skin: "#c89a8a", hair: "#5ff0d8", coat: "#e0e4e4", eye: "#ffb04a", st: 1, ex: "visor" },
-  "UNKNOWN CALLER": { bg: "#101010", skin: "", hair: "", coat: "", eye: "", st: -1, ex: "" },
-  TERMINAL: { bg: "#06100c", skin: "", hair: "", coat: "", eye: "", st: -2, ex: "" },
-  INES: { bg: "#2a1a2a", skin: "#b08a70", hair: "#d8d8e0", coat: "#5a3a5a", eye: "#3a2a20", st: 2, ex: "shawl" },
-  DEX: { bg: "#2a1a10", skin: "#c09a80", hair: "#ff8a3d", coat: "#c8621f", eye: "#202020", st: 3, ex: "goggles" },
-  BRAM: { bg: "#101a2a", skin: "#c8a088", hair: "#202830", coat: "#2a3a4a", eye: "#202020", st: 5, ex: "cap" },
-  LULU: { bg: "#2a2410", skin: "#d8a88c", hair: "#e86a8a", coat: "#e8c84a", eye: "#202020", st: 4, ex: "" },
-  HIRO: { bg: "#2a1810", skin: "#c8a080", hair: "#202020", coat: "#e8e0d0", eye: "#202020", st: 5, ex: "headband" },
-  PIX: { bg: "#102a2a", skin: "#d0a890", hair: "#7ac8ff", coat: "#2a4a4a", eye: "#202020", st: 3, ex: "glasses" },
-  OYELO: { bg: "#2a1028", skin: "#8a5a40", hair: "#101010", coat: "#6a2a5a", eye: "#f0e0c0", st: 5, ex: "beard" },
-  TAM: { bg: "#1a2a1a", skin: "#b88a70", hair: "#606060", coat: "#3a4a3a", eye: "#202020", st: 2, ex: "" },
-  ROOK: { bg: "#1a1a2a", skin: "#a8a0b0", hair: "#8a6aaa", coat: "#2a2a3a", eye: "#7affc0", st: 0, ex: "headset" },
+  ELIAS: { bg: "#1a2a30", skin: "#d6a88c", hair: "#2c1c14", coat: "#1a1f29", eye: "#8ab0c0", st: 0, ex: "collar stubble", hs: "tousle", sh: "#a6a28a", rim: "#ffb466" },
+  NOVA: { bg: "#2a1420", skin: "#c89a8a", hair: "#5ff0d8", coat: "#e0e4e4", eye: "#ffb04a", st: 1, ex: "visor", hs: "bob", sh: "#ff6f9a", rim: "#ff6f9a" },
+  "UNKNOWN CALLER": { bg: "#101010", skin: "", hair: "", coat: "", eye: "", st: -1, ex: "", hs: "", sh: "", rim: "" },
+  TERMINAL: { bg: "#06100c", skin: "", hair: "", coat: "", eye: "", st: -2, ex: "", hs: "", sh: "", rim: "" },
+  INES: { bg: "#2a1a2a", skin: "#b08a70", hair: "#d8d8e0", coat: "#5a3a5a", eye: "#3a2a20", st: 2, ex: "shawl wrinkle", hs: "bun", sh: "#8a5a7a", rim: "#ffb04a" },
+  DEX: { bg: "#2a1a10", skin: "#c09a80", hair: "#ff8a3d", coat: "#c8621f", eye: "#202020", st: 3, ex: "goggles pack", hs: "spiky", sh: "#2a2a30", rim: "#5ff0d8" },
+  BRAM: { bg: "#101a2a", skin: "#c8a088", hair: "#202830", coat: "#2a3a4a", eye: "#202020", st: 5, ex: "cap", hs: "buzz", sh: "#3a4a5a", rim: "#7ac8ff" },
+  LULU: { bg: "#2a2410", skin: "#d8a88c", hair: "#e86a8a", coat: "#e8c84a", eye: "#202020", st: 4, ex: "kid", hs: "pig", sh: "#3a5a8a", rim: "#ffd36b" },
+  HIRO: { bg: "#2a1810", skin: "#c8a080", hair: "#202020", coat: "#e8e0d0", eye: "#202020", st: 5, ex: "headband", hs: "short", sh: "#d8d0c0", rim: "#ffb04a" },
+  PIX: { bg: "#102a2a", skin: "#d0a890", hair: "#7ac8ff", coat: "#2a4a4a", eye: "#202020", st: 3, ex: "glasses", hs: "bob", sh: "#ffd36b", rim: "#3df5d0" },
+  OYELO: { bg: "#2a1028", skin: "#8a5a40", hair: "#101010", coat: "#6a2a5a", eye: "#f0e0c0", st: 5, ex: "beard", hs: "bald", sh: "#ffb04a", rim: "#ffb04a" },
+  TAM: { bg: "#1a2a1a", skin: "#b88a70", hair: "#909090", coat: "#3a4a3a", eye: "#202020", st: 2, ex: "wrinkle", hs: "short", sh: "#a0a060", rim: "#ffb04a" },
+  ROOK: { bg: "#1a1a2a", skin: "#a8a0b0", hair: "#8a6aaa", coat: "#2a2a3a", eye: "#7affc0", st: 0, ex: "headset", hs: "long", sh: "#3a3a50", rim: "#7affc0" },
 };
 function portrait(c: Ctx, x: number, y: number, s: number, who: string, t: number): void {
   const p = PORTS[who]; if (!p) return;
@@ -1687,24 +1888,58 @@ function portrait(c: Ctx, x: number, y: number, s: number, who: string, t: numbe
   P(0, 0, 12, 12, p.bg);
   if (p.st === -2) { P(2, 2, 8, 7, "#1a2a24"); P(3, 3, 6, 5, "#0a1a12"); P(4, 4, 4, 1, "#5dff9a"); if (Math.sin(t * 6) > 0) P(4, 6, 3, 1, "#5dff9a"); P(5, 9, 2, 1, "#2a3a34"); P(3, 10, 6, 1, "#2a3a34"); return; }
   if (p.st === -1) { for (let k = 0; k < 40; k++) P(Math.floor(h1(k + Math.floor(t * 12)) * 12), Math.floor(h1(k * 3.1 + Math.floor(t * 12)) * 12), 1, 1, "#3a3a3a"); P(4, 3, 4, 5, "#050505"); P(3, 8, 6, 4, "#050505"); return; }
-  P(2, 9, 8, 3, p.coat); P(5, 8, 2, 1, p.skin); P(3, 3, 6, 6, p.skin);
-  P(4, 5, 1, 1, p.eye); P(7, 5, 1, 1, p.eye); P(5, 7, 2, 1, "rgba(80,30,30,0.7)");
-  if (p.st === 0) { P(3, 2, 6, 2, p.hair); P(2, 3, 1, 3, p.hair); P(8, 3, 1, 1, p.hair); }
-  if (p.st === 1) { P(2, 2, 7, 2, p.hair); P(2, 4, 2, 4, p.hair); P(9, 3, 1, 2, "#3a2a2a"); }
-  if (p.st === 2) { P(3, 2, 6, 1, p.hair); P(5, 1, 2, 1, p.hair); P(2, 3, 1, 4, p.hair); P(9, 3, 1, 4, p.hair); }
-  if (p.st === 3) { P(3, 2, 6, 1, p.hair); P(3, 1, 1, 1, p.hair); P(5, 1, 1, 1, p.hair); P(7, 1, 1, 1, p.hair); }
-  if (p.st === 4) { P(3, 2, 6, 1, p.hair); P(1, 4, 2, 3, p.hair); P(9, 4, 2, 3, p.hair); }
-  if (p.st === 5) P(3, 2, 6, 1, p.hair);
-  if (p.ex === "visor") P(3, 5, 6, 1, "#ffb04a");
-  if (p.ex === "collar") { P(1, 8, 2, 3, "#2e3644"); P(9, 8, 2, 3, "#2e3644"); }
-  if (p.ex === "cap") { P(2, 1, 8, 2, "#1a2a3a"); P(2, 3, 9, 1, "#24384a"); P(5, 1, 1, 1, "#d8c84a"); }
-  if (p.ex === "goggles") P(3, 3, 6, 1, "#3df5d0");
-  if (p.ex === "headband") P(3, 3, 6, 1, "#c23a4e");
-  if (p.ex === "glasses") { P(3, 5, 2, 1, "#7ac8ff"); P(6, 5, 2, 1, "#7ac8ff"); }
-  if (p.ex === "beard") P(3, 7, 6, 2, p.hair);
-  if (p.ex === "shawl") P(1, 8, 10, 4, "#5a3a5a");
-  if (p.ex === "headset") P(2, 4, 1, 3, "#7affc0");
-  P(8, 3, 1, 6, "rgba(255,190,110,0.35)");
+  const u = s / 2;
+  const Q = (i: number, j: number, w: number, h: number, col: string): void => { c.fillStyle = col; c.fillRect(x + Math.round(i * u), y + Math.round(j * u), Math.ceil(w * u), Math.ceil(h * u)); };
+  const has2 = (k: string): boolean => (" " + p.ex + " ").indexOf(" " + k + " ") >= 0;
+  const kid = has2("kid"); const dy = kid ? 2 : 0;
+  const skD = mixHex(p.skin, "#2a1830", 0.38); const skH = mixHex(p.skin, "#fff0e0", 0.18); const coD = mixHex(p.coat, "#04060a", 0.45); const coH = mixHex(p.coat, "#c8e0e0", 0.15);
+  const hD = mixHex(p.hair, "#000000", 0.35); const hH = mixHex(p.hair, "#ffd0a0", 0.22); const cool = mixHex(p.bg, "#5fd8d0", 0.5);
+  // backdrop: neon window, rain streaks
+  Q(16, 0, 8, 24, mixHex(p.bg, p.rim, 0.14)); Q(20, 0, 4, 24, mixHex(p.bg, p.rim, 0.26)); Q(0, 0, 3, 24, mixHex(p.bg, "#5fd8d0", 0.12));
+  for (let k = 0; k < 7; k++) { const ry = (h1(k * 3.3) * 24 + t * 14 * (1 + h1(k))) % 24; Q(Math.floor(h1(k * 1.7) * 24), ry, 0.5, 2, "rgba(190,235,230,0.25)"); }
+  // shoulders + coat
+  for (let j = 17 + dy; j < 24; j++) { const hw = 5.5 + (j - 17 - dy) * 1.1; Q(12 - hw, j, hw * 2, 1, p.coat); Q(12 - hw, j, hw * 0.55, 1, coD); Q(12 + hw - 1, j, 1, 1, mixHex(p.coat, p.rim, 0.5)); Q(12 - hw, j, 0.5, 1, cool); }
+  for (let j = 17 + dy; j < 24; j++) { const wv = Math.max(0, (23 - j) * 0.7 + 1); Q(12.5 - wv / 2, j, wv, 1, p.sh); Q(12.5 - wv / 2 - 1, j, 1, 1, coH); Q(12.5 + wv / 2, j, 1, 1, coD); }
+  if (has2("collar")) { Q(6, 14, 3, 6, p.coat); Q(6, 14, 1, 6, coD); Q(15, 14, 3, 6, coH); Q(17, 15, 1, 5, mixHex(p.coat, p.rim, 0.4)); }
+  if (has2("shawl")) for (let j = 16 + dy; j < 21 + dy; j++) Q(5, j, 14, 1, (j % 2 === 0) ? p.sh : mixHex(p.sh, "#000000", 0.25));
+  if (has2("pack")) Q(16, 18, 2, 6, "#2a2622");
+  // neck
+  Q(10, 14 + dy, 4, 4, skD); Q(12, 14 + dy, 2, 3, p.skin);
+  // head (3/4 facing right)
+  const rows = [[9, 14], [8, 15], [7, 16], [7, 16], [7, 16], [7, 16], [7, 16], [7, 16], [8, 16], [8, 15], [9, 15], [10, 13]];
+  rows.forEach((r: number[], k: number) => { const a = r[0] ?? 7; const b2 = r[1] ?? 16; const j = 4 + k + dy; Q(a, j, b2 - a, 1, p.skin); Q(a, j, 2, 1, skD); Q(b2 - 1, j, 1, 1, mixHex(p.skin, p.rim, 0.5)); if (k > 1 && k < 9) Q(a + 2, j, 1, 1, mixHex(p.skin, skD, 0.5)); });
+  Q(12, 5 + dy, 3, 1, skH); Q(14, 9 + dy, 1, 1, skH);
+  Q(7, 8 + dy, 1, 3, skD); Q(6, 9 + dy, 1, 2, skD);
+  const blink = (t % 4.3) < 0.13;
+  if (blink) { Q(9, 9 + dy, 2, 1, skD); Q(13, 9 + dy, 2, 1, skD); }
+  else { Q(9, 9 + dy, 2, 1, "#e8e0d8"); Q(10, 9 + dy, 1, 1, p.eye); Q(13, 9 + dy, 2, 1, "#e8e0d8"); Q(14, 9 + dy, 1, 1, p.eye); Q(9, 8 + dy, 2, 1, skD); Q(13, 8 + dy, 2, 1, skD); }
+  Q(9, 7 + dy, 2, 1, hD); Q(13, 7 + dy, 2, 1, hD);
+  Q(13, 10 + dy, 1, 2, skD); Q(14, 11 + dy, 1, 1, skD); Q(12, 12 + dy, 1, 1, skD);
+  Q(11, 13 + dy, 3, 1, mixHex(p.skin, "#5a2028", 0.45)); Q(8, 11 + dy, 1, 2, skD);
+  if (has2("wrinkle")) { Q(9, 11 + dy, 1, 1, skD); Q(14, 12 + dy, 1, 1, skD); Q(10, 6 + dy, 4, 1, mixHex(p.skin, skD, 0.5)); }
+  if (has2("stubble")) { Q(8, 12 + dy, 8, 3, mixHex(p.skin, p.hair, 0.32)); Q(11, 13 + dy, 3, 1, mixHex(p.skin, "#5a2028", 0.45)); }
+  if (has2("beard")) { Q(8, 11 + dy, 8, 5, p.hair); Q(9, 15 + dy, 5, 1, p.hair); Q(11, 13 + dy, 3, 1, "#3a1a18"); Q(15, 12 + dy, 1, 2, hH); }
+  // hair
+  const hs = p.hs;
+  if (hs === "long") { Q(5, 4 + dy, 3, 13, p.hair); Q(5, 4 + dy, 1, 13, hD); Q(16, 5 + dy, 2, 9, p.hair); }
+  if (hs === "bob") { Q(5, 4 + dy, 3, 10, p.hair); Q(16, 5 + dy, 2, 8, p.hair); Q(5, 13 + dy, 3, 1, hD); }
+  if (hs === "pig") { Q(3, 6 + dy, 3, 6, p.hair); Q(19, 6 + dy, 3, 6, p.hair); Q(5, 6 + dy, 1, 2, p.sh); Q(18, 6 + dy, 1, 2, p.sh); }
+  if (hs === "bun") { Q(4, 1 + dy, 5, 4, p.hair); Q(5, 1 + dy, 2, 1, hH); }
+  if (hs !== "bald") {
+    const th = hs === "buzz" ? 1 : 2;
+    Q(7, 4 + dy - th, 10, th + 1, p.hair); Q(6, 4 + dy, 2, hs === "buzz" ? 3 : 5, p.hair); Q(8, 4 + dy - th, 5, 1, hH);
+    if (hs === "tousle") { Q(8, 1 + dy, 2, 1, p.hair); Q(11, 1 + dy, 3, 1, p.hair); Q(15, 2 + dy, 2, 2, p.hair); Q(13, 5 + dy, 3, 1, p.hair); Q(15, 6 + dy, 1, 1, p.hair); Q(10, 2 + dy, 3, 1, hH); Q(16, 3 + dy, 1, 2, mixHex(p.hair, p.rim, 0.45)); Q(6, 3 + dy, 1, 2, hD); }
+    if (hs === "spiky") for (let k = 0; k < 5; k++) Q(7 + k * 2, (k % 2 ? 0 : 1) + dy, 1, 2, p.hair);
+    if (hs === "bob" || hs === "long") { Q(12, 5 + dy, 5, 1, p.hair); Q(16, 4 + dy, 1, 3, p.hair); }
+    if (hs === "short") Q(16, 4 + dy, 1, 2, p.hair);
+  } else { Q(9, 4 + dy, 4, 1, skH); }
+  if (has2("cap")) { Q(6, 1 + dy, 12, 4, "#1a2636"); Q(12, 4 + dy, 7, 1, "#101820"); Q(11, 2 + dy, 2, 1, "#d8c84a"); Q(6, 1 + dy, 2, 4, "#101820"); }
+  if (has2("goggles")) { Q(7, 4 + dy, 10, 1, "#1a1a1a"); Q(9, 3 + dy, 3, 2, "#3df5d0"); Q(13, 3 + dy, 3, 2, "#3df5d0"); Q(10, 3 + dy, 1, 1, "#c8fff0"); }
+  if (has2("headband")) { Q(7, 5 + dy, 10, 1, "#c23a4e"); Q(6, 5 + dy, 1, 3, "#c23a4e"); }
+  if (has2("glasses")) { Q(8, 9 + dy, 3, 1, "#7ac8ff"); Q(12, 9 + dy, 3, 1, "#7ac8ff"); Q(11, 9 + dy, 1, 1, "#333344"); }
+  if (has2("visor")) { Q(8, 8 + dy, 9, 2, "#ffb04a"); Q(9, 8 + dy, 6, 1, "#ffe0a0"); }
+  if (has2("headset")) { Q(6, 8 + dy, 2, 4, "#7affc0"); Q(8, 12 + dy, 3, 1, "#7affc0"); }
+  c.globalAlpha = 0.3; Q(15, 4 + dy, 2, 12, p.rim); c.globalAlpha = 0.18; Q(6, 4 + dy, 2, 12, "#5fd8d0"); c.globalAlpha = 1;
 }
 const SPK: Record<string, string> = { ELIAS: "#9fd8ff", NOVA: "#ff8fb5", "UNKNOWN CALLER": "#c8c8c8", INES: "#e8b0d8", DEX: "#ff9a4d", BRAM: "#9fc0ff", LULU: "#ffd36b", HIRO: "#ffb35c", PIX: "#7ae8ff", OYELO: "#ffcf7a", TAM: "#b8d0a0", ROOK: "#c8a8ff", TERMINAL: "#5dff9a" };
 function wrapText(c: Ctx, text: string, maxW: number): string[] {
@@ -1901,13 +2136,14 @@ export default function AfterRain() {
       if (isOv) { dh = Math.max(170, Math.floor(vh - 10)); dw = Math.floor(Math.min(avail, dh * 16 / 9)); dh = Math.floor(dw * 9 / 16); }
       else if (avail < 560) { lw = 240; dw = Math.floor(avail); dh = Math.floor(dw * 3 / 4); }
       else { dw = Math.floor(Math.min(avail, Math.max(480, vh * 0.66 * 16 / 9))); dh = Math.floor(dw * 9 / 16); }
-      if (lw !== W) { W = lw; buf.width = W; rbuf.width = W; fgc.width = W; b.imageSmoothingEnabled = false; rc.imageSmoothingEnabled = false; }
+      const sc2 = G.gfx ? 2 : 1;
+      if (lw !== W || sc2 !== SC || buf.width !== lw * sc2) { W = lw; SC = sc2; PG = 1 / sc2; buf.width = W * SC; buf.height = H * SC; rbuf.width = W * SC; rbuf.height = H * SC; fgc.width = W; b.imageSmoothingEnabled = false; rc.imageSmoothingEnabled = false; }
       if (isOv !== ovNow) { ovNow = isOv; setOv(isOv); }
       const dpr = Math.min(G.gfx ? 3 : 2, window.devicePixelRatio || 1);
       const pw = Math.floor(dw * dpr); const ph = Math.floor(dh * dpr);
       if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; cv.style.width = dw + "px"; cv.style.height = dh + "px"; }
       update(dt);
-      b.setTransform(1, 0, 0, 1, 0, 0); b.globalAlpha = 1; b.globalCompositeOperation = "source-over";
+      b.setTransform(SC, 0, 0, SC, 0, 0); b.globalAlpha = 1; b.globalCompositeOperation = "source-over";
       render(b, rc, buf, rbuf, cc);
       const z = G.scene === "play" || G.scene === "cut" ? Math.max(1, G.zoom) : 1;
       const sw = W / z; const sh = H / z;
@@ -1915,9 +2151,9 @@ export default function AfterRain() {
       const sx = clamp(fx - sw / 2, 0, W - sw); const sy = clamp(FEET - YO - 24 - sh * 0.55, 0, H - sh);
       G.view = { sx, sy, z };
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(buf, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      ctx.drawImage(buf, sx * SC, sy * SC, sw * SC, sh * SC, 0, 0, cv.width, cv.height);
       if (G.gfx && bx0 && bx1 && bx2 && bx3) {
-        bx0.globalCompositeOperation = "copy"; bx0.imageSmoothingEnabled = true; bx0.drawImage(buf, sx, sy, sw, sh, 0, 0, 160, 90);
+        bx0.globalCompositeOperation = "copy"; bx0.imageSmoothingEnabled = true; bx0.drawImage(buf, sx * SC, sy * SC, sw * SC, sh * SC, 0, 0, 160, 90);
         bx1.globalCompositeOperation = "copy"; bx1.imageSmoothingEnabled = true; bx1.drawImage(bl0, 0, 0, 80, 45);
         bx2.globalCompositeOperation = "copy"; bx2.drawImage(bl1, 0, 0); bx2.globalCompositeOperation = "multiply"; for (let k = 0; k < BLOOM.n; k++) bx2.drawImage(bl1, 0, 0);
         bx3.globalCompositeOperation = "copy"; bx3.imageSmoothingEnabled = true; bx3.drawImage(bl2, 0, 0, 20, 12);
