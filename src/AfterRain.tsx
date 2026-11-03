@@ -511,43 +511,76 @@ function idleP(t: number, sd: number): Pose {
 // stride length (in body units, k=1) for a speed given in body units per second
 function strideK(v: number): number { return clamp(8.5 + 0.26 * v, 14, 36); }
 function sstep(u: number): number { const v = clamp(u, 0, 1); return v * v * (3 - 2 * v); }
-// procedural IK gait: feet are planted targets (no sliding), hip bob / arms / shoulders derive from the same phase
+// running foot path, ground coords in body units: [s, x, y, footAngle] keys through the swing (toe-off -> heel kick -> knee drive -> reach -> claw back)
+function runSwing(s: number, xP: number, yP: number, xL: number): number[] {
+  const K = [[0, xP, yP, -1.0], [0.3, xP * 0.55, 7.6, -1.25], [0.56, 0.4, 7.1, -0.55], [0.8, xL + 2.3, 4.0, 0.12], [1, xL, 1.19, 0.06]];
+  let i = 0; while (i < K.length - 2 && s > (K[i + 1]?.[0] ?? 1)) i++;
+  const k0 = K[Math.max(0, i - 1)] ?? []; const k1 = K[i] ?? []; const k2 = K[i + 1] ?? []; const k3 = K[Math.min(K.length - 1, i + 2)] ?? [];
+  const u = clamp((s - (k1[0] ?? 0)) / Math.max(1e-4, (k2[0] ?? 1) - (k1[0] ?? 0)), 0, 1); const u2 = u * u; const u3 = u2 * u;
+  const cr = (j: number): number => { const p0 = k0[j] ?? 0; const p1 = k1[j] ?? 0; const p2 = k2[j] ?? 0; const p3 = k3[j] ?? 0; return 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (3 * p1 - p0 - 3 * p2 + p3) * u3); };
+  return [cr(1), cr(2), cr(3)];
+}
+// procedural IK gait: feet are planted targets (no sliding), hip bob / arms / shoulders derive from the same phase.
+// r blends the walk into a run with a flight phase (both feet briefly off the ground)
 function gaitIK(p: number, w: number, r: number, D: number, t: number, sd: number): Pose {
   const P = idleP(t, sd); const T = Math.PI * 2;
   P.ik = 1;
-  const beta = 0.54 - 0.2 * r; const Ls = D * beta; const c0 = -1.2;
-  const lift = 2.0 + 3.6 * r; const strike = 0.3 * (1 - 0.7 * r); const off = -0.8;
+  const pp = ((p % 1) + 1) % 1;
+  // walk
+  const beta = 0.54; const Ls = D * beta; const c0 = -1.2;
+  const lift = 2.0; const strike = 0.3; const off = -0.8;
   const foot = (u0: number): number[] => {
     const u = ((u0 % 1) + 1) % 1;
     if (u < beta) {
       const s = u / beta; const x = Ls * (0.5 - s) + c0;
       const fa = s < 0.2 ? strike * (1 - s / 0.2) : s > 0.6 ? off * sstep((s - 0.6) / 0.4) : 0;
-      return [x, 1.19 + (fa < 0 ? -Math.sin(fa) * 1.7 : 0), fa, 0];
+      return [x, 1.19 + (fa < 0 ? -Math.sin(fa) * 1.7 : 0), fa];
     }
     const s = (u - beta) / (1 - beta); const e = sstep(s);
-    const hg = lift * Math.sin(Math.PI * Math.pow(s, 1 - 0.35 * r));
-    const x = Ls * (-0.5 + e) + c0 + r * 1.2 * Math.sin(Math.PI * s);
-    return [x, 1.19 + -Math.sin(off) * 1.7 * (1 - sstep(s * 2.5)) + hg, off + (strike - off) * e, hg];
+    const hg = lift * Math.sin(Math.PI * s);
+    const x = Ls * (-0.5 + e) + c0;
+    return [x, 1.19 + -Math.sin(off) * 1.7 * (1 - sstep(s * 2.5)) + hg, off + (strike - off) * e];
   };
-  const a = foot(p); const b = foot(p + 0.5);
+  // run: stance covers exactly duty*D so the planted foot never slides
+  const duty = clamp(9.2 / D, 0.24, 0.5); const S = D * duty; const xL = 1.5;
+  const rfoot = (u0: number): number[] => {
+    const u = ((u0 % 1) + 1) % 1;
+    if (u < duty) {
+      const s = u / duty; const x = xL - S * s;
+      const fa = s < 0.15 ? 0.06 * (1 - s / 0.15) : s > 0.45 ? -1.0 * sstep((s - 0.45) / 0.55) : 0;
+      return [x, Math.max(1.19, 1.04 - Math.sin(fa) * 2.4), fa];
+    }
+    return runSwing((u - duty) / (1 - duty), xL - S, 1.04 + Math.sin(1.0) * 2.4, xL);
+  };
+  const wa = foot(pp); const wb = foot(pp + 0.5);
+  const ra = r > 0 ? rfoot(pp) : wa; const rb = r > 0 ? rfoot(pp + 0.5) : wb;
+  const mx = (m: number[], n: number[], i: number): number => (m[i] ?? 0) * (1 - r) + (n[i] ?? 0) * r;
+  const a = [mx(wa, ra, 0), mx(wa, ra, 1), mx(wa, ra, 2)]; const b = [mx(wb, rb, 0), mx(wb, rb, 1), mx(wb, rb, 2)];
   const iw = 1 - w;
   P.ax0 = 1.0 * iw + (a[0] ?? 0) * w; P.ay0 = 1.19 * iw + (a[1] ?? 1.19) * w; P.f0 = (a[2] ?? 0) * w;
   P.ax1 = -1.1 * iw + (b[0] ?? 0) * w; P.ay1 = 1.19 * iw + (b[1] ?? 1.19) * w; P.f1 = (b[2] ?? 0) * w;
-  // upright hip: as high as the legs allow (stance leg ~straight), capped near standing height -> small natural bob
-  const RL = 0.99 * 14.4; const cap = 15.4 - 0.5 * r;
+  // walk hip: as high as the legs allow (stance leg ~straight), capped near standing height -> small natural bob
+  const RL = 0.99 * 14.4; const cap = 15.4;
   const av = (f: number[]): number => (f[1] ?? 1.19) + Math.sqrt(Math.max(0, RL * RL - (f[0] ?? 0) * (f[0] ?? 0)));
-  const hip = Math.min(cap, av(a), av(b));
+  const whip = Math.min(cap, av(wa), av(wb));
+  // run hip: lowest at mid-stance (knee absorbs), highest mid-flight
+  const psi = 2 * (pp - duty / 2); const rhip = 14.45 - 0.5 * Math.cos(T * psi);
+  const hip = whip * (1 - r) + rhip * r;
   P.fix = (15.15 + P.br * 0.12) * iw + hip * w;
-  P.lift = r * w * Math.max(0, Math.min(a[3] ?? 0, b[3] ?? 0));
-  P.hl = (hip - cap) * 0.3 * w;
-  const amp = 0.48 + 0.5 * r; const ac = -Math.cos(T * (p - 0.04));
-  const s0 = amp * ac; const s1 = -amp * ac;
-  const eb = 0.22 + 1.3 * r;
+  // flight: lift the body by the lowest sole's clearance so neither foot is pressed into the ground
+  const clr = (f: number[]): number => Math.min((f[1] ?? 1.19) - 1.19, (f[1] ?? 1.19) - 1.04 + Math.sin(f[2] ?? 0) * 2.4);
+  P.lift = r > 0 ? w * Math.max(0, Math.min(clr(a), clr(b))) : 0;
+  P.hl = ((whip - cap) * 0.3 * (1 - r) - 0.32 * Math.cos(T * (psi - 0.12)) * r) * w;
+  P.hx = P.hx * iw + 0.5 * r * w;
+  // arms: walk swings loosely; the run pumps forward/back with elbows near 90 degrees
+  const ac = -Math.cos(T * (pp - 0.04 + 0.02 * r));
+  const sw = (sg: number): number => { const v = ac * sg; return (0.48 * (1 - r) + (v > 0 ? 0.78 : 0.9) * r) * v; };
+  const s0 = sw(1); const s1 = sw(-1);
+  const ew = (v: number): number => (0.22 + 0.4 * Math.max(0, v)) * (1 - r) + (1.4 + 0.42 * Math.max(0, v) - 0.08 * Math.max(0, -v)) * r;
   P.s0 = P.s0 * iw + s0 * w; P.s1 = P.s1 * iw + s1 * w;
-  P.e0 = P.e0 * iw + (eb + (0.4 + 0.2 * r) * Math.max(0, ac)) * w; P.e1 = P.e1 * iw + (eb + (0.4 + 0.2 * r) * Math.max(0, -ac)) * w;
-  P.sr = s0 * 0.7 * w;
-  P.hx *= iw;
-  P.sway = P.sway * iw + (0.6 + 0.35 * Math.sin(T * 2 * p + 0.8) + 1.5 * r) * w;
+  P.e0 = P.e0 * iw + ew(ac) * w; P.e1 = P.e1 * iw + ew(-ac) * w;
+  P.sr = s0 * (0.7 - 0.25 * r) * w;
+  P.sway = P.sway * iw + (0.6 + 0.35 * Math.sin(T * 2 * pp + 0.8) + 1.5 * r) * w;
   P.lean = 0.02 + (0.02 + 0.08 * r) * w;
   return P;
 }
@@ -737,7 +770,7 @@ function npcPose(n: Npc, moving: boolean, t: number): Pose {
 }
 const ELOOK: Look = { coat: "#1a1f29", hair: "#2c1c14", skin: "#d6a88c", accent: "#a8a48e", rim: "#ffb466", h: 31, extra: "collar stubble", b: "m", cl: 2, hs: "tousle", sh: "#a6a28a", pa: "#13151b", shoe: "#060607", open: true, cool: "#5fd8d0" };
 // Elias's procedural animation state (module level, never saved)
-const EA = { ph: 0, spd: 0, w: 0, r: 0, lean: 0.03, pvx: 0, sway: 0, swayV: 0, hr: 0, hrV: 0, hl: 0, hlV: 0, dip: 0, dipV: 0, turn: 0, f: 1, pre: 0 };
+const EA = { ph: 0, spd: 0, w: 0, r: 0, lean: 0.03, pvx: 0, sway: 0, swayV: 0, hr: 0, hrV: 0, hl: 0, hlV: 0, dip: 0, dipV: 0, turn: 0, f: 1, pre: 0, sk: 0, skA: 1 };
 const PRE = 0.06; const TURN = 0.13;
 function animTick(dt: number): void {
   const g = G; const a = EA; const v = Math.abs(g.vx); const gr = g.grounded;
@@ -747,12 +780,20 @@ function animTick(dt: number): void {
   a.r += ((gr ? clamp((a.spd - 64) / 34, 0, 1) : a.r) - a.r) * Math.min(1, dt * 6);
   if (gr && a.w > 0.02) {
     const prev = a.ph; a.ph += a.spd * dt / strideK(Math.max(a.spd, 1));
-    if (Math.floor(prev * 2) !== Math.floor(a.ph * 2) && a.w > 0.35) { step(); if (a.spd > 80) puff(g.px - g.facing * 3, g.py, 1); }
+    if (Math.floor(prev * 2) !== Math.floor(a.ph * 2) && a.w > 0.35) {
+      step(); if (a.spd > 80) puff(g.px - g.facing * 3, g.py, 1);
+      // contact: hair and coat hem bounce a little harder at a run
+      a.hrV += 2.6 * a.r; a.swayV += 5 * a.r; a.hlV -= 1.2 * a.r;
+    }
   } else if (gr) a.ph = Math.round(a.ph * 2) / 2;
   g.walk = a.ph * Math.PI * 2;
   const acc = clamp(((g.vx - a.pvx) / dt) * g.facing / 600, -1, 1); a.pvx = g.vx;
   const lt = gr ? 0.02 + 0.02 * a.w + 0.09 * a.r + acc * 0.05 : 0.06;
   a.lean += (lt - a.lean) * Math.min(1, dt * 7);
+  // stopping from a run: a short skid and settle (knees give, coat and hair swing forward)
+  if (gr && a.skA > 0 && a.r > 0.3 && acc < -0.7 && !g.left && !g.right) { a.sk = 0.14; a.skA = 0; a.dipV += 7; a.swayV -= 22; a.hrV -= 6; a.hlV += 1.5; }
+  if (a.spd < 6 || acc > 0.2) a.skA = 1;
+  a.sk = Math.max(0, a.sk - dt);
   if (g.facing !== a.f) { a.f = g.facing; a.turn = TURN; a.swayV -= 16; a.hrV -= 7; }
   a.turn = Math.max(0, a.turn - dt);
   const sw = 0.2 + 0.8 * a.w + 1.4 * a.r - acc * 0.7 + (gr ? 0 : clamp(g.vy / 180, -1, 1) * -0.9);
@@ -784,6 +825,7 @@ function eliasLoco(t: number): Pose {
     P.fix -= c * 2.4; P.lean = a.lean + Math.max(0, c) * 0.16; P.s0 += c * 0.35; P.s1 -= c * 0.3; P.e0 += c * 0.25;
     P.sq = 1 - clamp(c, -0.3, 1) * 0.07;
     if (a.w < 0.1 && Math.sin(t * 0.23) > 0.85) P.tilt = -0.18;
+    if (a.sk > 0) { const u = Math.sin((a.sk / 0.14) * Math.PI); P.lean -= 0.1 * u; P.hx -= 0.6 * u; P.s0 -= 0.35 * u; P.s1 += 0.25 * u; }
   } else P.lean += a.lean * 0.3;
   P.sway = a.sway + (g.grounded ? 0.35 * Math.sin(Math.PI * 4 * a.ph + 0.8) * a.w : 0);
   P.hr = a.hr; P.hl += a.hl;
@@ -1893,7 +1935,16 @@ function drawApt(b: Ctx, cc: Caches, cam: number, seated: boolean): void {
   const adc = aptAd(t);
   b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.05 + 0.04 * adc.k; b.fillStyle = `rgb(${adc.rgb})`;
   b.beginPath(); b.moveTo(wx, 96); b.lineTo(wx + 80, 96); b.lineTo(wx + 104, FEET + 6); b.lineTo(wx - 12, FEET + 6); b.closePath(); b.fill(); b.restore();
-  if (G.sweep < 0 && !seated) { const p = clamp(-G.sweep / 2.2, 0, 1); const bx0 = wx + 110 - p * 300; b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = Math.sin(p * Math.PI) * 0.16; const sg = b.createLinearGradient(bx0 - 24, 0, bx0 + 24, 0); sg.addColorStop(0, "rgba(255,220,170,0)"); sg.addColorStop(0.5, "rgba(255,220,170,1)"); sg.addColorStop(1, "rgba(255,220,170,0)"); b.fillStyle = sg; b.beginPath(); b.moveTo(bx0 - 10, 80); b.lineTo(bx0 + 10, 80); b.lineTo(bx0 + 26, FEET); b.lineTo(bx0 - 22, FEET); b.closePath(); b.fill(); b.restore(); }
+  // headlight sweep: a narrow, soft band on the back wall and ceiling only; it fades out above head height and is drawn
+  // before any character, so it never washes over Elias
+  if (G.sweep < 0) {
+    const p = clamp(-G.sweep / 2.2, 0, 1); const bx0 = wx + 100 - p * 280; const pk = Math.sin(p * Math.PI) * (G.gfx ? 0.13 : 0.09);
+    b.save(); b.globalCompositeOperation = "lighter";
+    const sg = b.createLinearGradient(bx0 - 14, 0, bx0 + 14, 0); sg.addColorStop(0, "rgba(255,226,186,0)"); sg.addColorStop(0.5, "rgba(255,226,186,1)"); sg.addColorStop(1, "rgba(255,226,186,0)");
+    b.fillStyle = sg;
+    for (let k = 0; k < 12; k++) { const y0 = 18 + k * 8; b.globalAlpha = pk * clamp((114 - y0) / 40, 0, 1); b.fillRect(Math.round(bx0 - 14), y0, 28, 8); }
+    b.restore();
+  }
   glow(b, 121 - cam, 138, 26, "255,180,100", 0.6);
   if (G.gfx) glow(b, 124 - cam, 140, 30, adc.rgb, 0.1 + 0.1 * adc.k);
   R(b, 118 - cam, 137, 6, 1, "#ffe0a0");
