@@ -509,36 +509,37 @@ function idleP(t: number, sd: number): Pose {
   return P;
 }
 // stride length (in body units, k=1) for a speed given in body units per second
-function strideK(v: number): number { return clamp(14 + 0.21 * v, 16, 40); }
+function strideK(v: number): number { return clamp(8.5 + 0.26 * v, 14, 36); }
 function sstep(u: number): number { const v = clamp(u, 0, 1); return v * v * (3 - 2 * v); }
 // procedural IK gait: feet are planted targets (no sliding), hip bob / arms / shoulders derive from the same phase
 function gaitIK(p: number, w: number, r: number, D: number, t: number, sd: number): Pose {
   const P = idleP(t, sd); const T = Math.PI * 2;
   P.ik = 1;
-  const beta = 0.58 - 0.22 * r; const Ls = D * beta;
+  const beta = 0.54 - 0.2 * r; const Ls = D * beta; const c0 = -1.2;
   const lift = 2.0 + 3.6 * r; const strike = 0.3 * (1 - 0.7 * r); const off = -0.8;
   const foot = (u0: number): number[] => {
     const u = ((u0 % 1) + 1) % 1;
     if (u < beta) {
-      const s = u / beta; const x = Ls * (0.5 - s);
+      const s = u / beta; const x = Ls * (0.5 - s) + c0;
       const fa = s < 0.2 ? strike * (1 - s / 0.2) : s > 0.6 ? off * sstep((s - 0.6) / 0.4) : 0;
       return [x, 1.19 + (fa < 0 ? -Math.sin(fa) * 1.7 : 0), fa, 0];
     }
     const s = (u - beta) / (1 - beta); const e = sstep(s);
     const hg = lift * Math.sin(Math.PI * Math.pow(s, 1 - 0.35 * r));
-    const x = Ls * (-0.5 + e) + r * 1.2 * Math.sin(Math.PI * s);
+    const x = Ls * (-0.5 + e) + c0 + r * 1.2 * Math.sin(Math.PI * s);
     return [x, 1.19 + -Math.sin(off) * 1.7 * (1 - sstep(s * 2.5)) + hg, off + (strike - off) * e, hg];
   };
   const a = foot(p); const b = foot(p + 0.5);
   const iw = 1 - w;
   P.ax0 = 1.0 * iw + (a[0] ?? 0) * w; P.ay0 = 1.19 * iw + (a[1] ?? 1.19) * w; P.f0 = (a[2] ?? 0) * w;
   P.ax1 = -1.1 * iw + (b[0] ?? 0) * w; P.ay1 = 1.19 * iw + (b[1] ?? 1.19) * w; P.f1 = (b[2] ?? 0) * w;
-  const bobW = 13.9 - 0.5 * Math.cos(T * 2 * p);
-  const bobR = 13.5 - 1.1 * Math.cos(T * 2 * (p - beta / 2));
-  const hip = bobW * (1 - r) + bobR * r;
+  // upright hip: as high as the legs allow (stance leg ~straight), capped near standing height -> small natural bob
+  const RL = 0.99 * 14.4; const cap = 15.4 - 0.5 * r;
+  const av = (f: number[]): number => (f[1] ?? 1.19) + Math.sqrt(Math.max(0, RL * RL - (f[0] ?? 0) * (f[0] ?? 0)));
+  const hip = Math.min(cap, av(a), av(b));
   P.fix = (15.15 + P.br * 0.12) * iw + hip * w;
   P.lift = r * w * Math.max(0, Math.min(a[3] ?? 0, b[3] ?? 0));
-  P.hl = -(hip - (13.9 * (1 - r) + 13.5 * r)) * 0.45 * w;
+  P.hl = (hip - cap) * 0.3 * w;
   const amp = 0.48 + 0.5 * r; const ac = -Math.cos(T * (p - 0.04));
   const s0 = amp * ac; const s1 = -amp * ac;
   const eb = 0.22 + 1.3 * r;
@@ -547,7 +548,7 @@ function gaitIK(p: number, w: number, r: number, D: number, t: number, sd: numbe
   P.sr = s0 * 0.7 * w;
   P.hx *= iw;
   P.sway = P.sway * iw + (0.6 + 0.35 * Math.sin(T * 2 * p + 0.8) + 1.5 * r) * w;
-  P.lean = 0.03 + (0.04 + 0.16 * r) * w;
+  P.lean = 0.02 + (0.02 + 0.08 * r) * w;
   return P;
 }
 function figure(c: Ctx, x: number, y: number, L: Look, f: number, P: Pose, rims: boolean): Joints {
@@ -750,7 +751,7 @@ function animTick(dt: number): void {
   } else if (gr) a.ph = Math.round(a.ph * 2) / 2;
   g.walk = a.ph * Math.PI * 2;
   const acc = clamp(((g.vx - a.pvx) / dt) * g.facing / 600, -1, 1); a.pvx = g.vx;
-  const lt = gr ? 0.02 + 0.05 * a.w + 0.15 * a.r + acc * 0.09 : 0.07;
+  const lt = gr ? 0.02 + 0.02 * a.w + 0.09 * a.r + acc * 0.05 : 0.06;
   a.lean += (lt - a.lean) * Math.min(1, dt * 7);
   if (g.facing !== a.f) { a.f = g.facing; a.turn = TURN; a.swayV -= 16; a.hrV -= 7; }
   a.turn = Math.max(0, a.turn - dt);
@@ -1048,7 +1049,7 @@ type Game = {
   panel: Panel; rev: number; near: string; toast: { text: string; t: number } | null; banner: { a: string; b: string; t: number } | null;
   npcs: Npc[]; chat: Chat | null; chatCd: number; drops: Drop[]; cars: Car[]; flash: number;
   music: number; sfx: number; amb: number; gfx: number; textSpeed: number; saveNote: string; bagTab: string; openItem: string; ringing: boolean;
-  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; sweep: number; sndT: number; lookX: number; peds: Ped[]; tramOn: boolean;
+  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; beat: number; sweep: number; sndT: number; lookX: number; peds: Ped[]; tramOn: boolean;
 };
 
 const LK: Record<string, Look> = {
@@ -1105,7 +1106,7 @@ function newGame(): Game {
     panel: "none", rev: 1, near: "", toast: null, banner: null,
     npcs: makeNpcs(), chat: null, chatCd: 6, drops: makeDrops(), cars: makeCars(), flash: 0,
     music: 0.6, sfx: 0.7, amb: 0.7, gfx: 1, textSpeed: 1, saveNote: "", bagTab: "items", openItem: "", ringing: false,
-    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, sweep: 6, sndT: 0, lookX: 0, peds: makePeds(), tramOn: false,
+    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, beat: -1, sweep: 6, sndT: 0, lookX: 0, peds: makePeds(), tramOn: false,
   };
 }
 const G: Game = newGame();
@@ -1264,7 +1265,7 @@ function loadGame(): void {
     const loc: LocId = d.loc === "district" || d.loc === "market" ? d.loc : "apt";
     G.flags.called = 1; G.flags.rang = 1;
     G.scene = "play"; G.loc = loc; G.px = clamp(typeof d.px === "number" ? d.px : 104, 8, LOCW[loc] - 8); G.cam = clamp(G.px - W / 2, 0, LOCW[loc] - W); G.fade = 1;
-    G.saveNote = "Game loaded."; setMood(loc); applyVol(); G.rev++;
+    syncObj(true); G.saveNote = "Game loaded."; setMood(loc); applyVol(); G.rev++;
   } catch { G.saveNote = "That save could not be read."; G.rev++; }
 }
 
@@ -1279,6 +1280,13 @@ function give(id: string): void {
 }
 function pay(n: number): boolean { if (G.credits < n) return false; G.credits -= n; tone(1200, 0.08, "square", 0.04, 0, 1600); G.rev++; return true; }
 function complete(n: number): void { if (G.obj === n) { G.obj = n + 1; toast("✓ " + (OBJ[n] ?? "")); chime(); } }
+// objectives follow where you are and what you carry, so the HUD never lags behind (also repairs stale saves)
+function syncObj(quiet: boolean): void {
+  const need = Math.max(G.obj, G.loc !== "apt" ? 1 : 0, G.flags.market ? 2 : 0, G.loc === "market" ? 3 : 0, has("chip") ? 4 : 0);
+  if (G.obj >= need || G.obj >= 5) return;
+  if (quiet) { G.obj = need; return; }
+  while (G.obj < need) complete(G.obj);
+}
 function say(lines: Line[], done: (() => void) | null, push: boolean): void {
   if (lines.length === 0) return;
   G.dlg = { lines: lines.slice(), i: 0, chars: 0, waiting: false, done, push, acted: -1 }; G.rev++;
@@ -1410,7 +1418,7 @@ const SPOTS: Spot[] = [
   { id: "photo", loc: "apt", x: 98, y: 136, kind: "EXAMINE", label: "Old photograph", show: () => !G.flags.photoSeen, use: () => say([E("Mara. The pier, the summer before the blackout. She made me promise to keep this."), E("Six years. And now a stranger says her name like it's nothing.")], () => { G.flags.photoSeen = 1; G.rev++; }, true) },
   { id: "photo2", loc: "apt", x: 98, y: 136, kind: "COLLECT", label: "Old photograph", show: () => !!G.flags.photoSeen && !has("photo"), use: () => give("photo") },
   { id: "term", loc: "apt", x: 146, y: 124, kind: "ACCESS", label: "", show: () => true, use: () => say(termHub(), null, false) },
-  { id: "window", loc: "apt", x: 236, y: 92, kind: "EXAMINE", label: "Window", show: () => true, use: () => say([E("Rain on the glass. Down there a billboard sells sunlight to people who have never seen it.")], null, false) },
+  { id: "window", loc: "apt", x: 236, y: 92, kind: "EXAMINE", label: "Window", show: () => true, use: () => say([E("Rain on the glass. Down there a billboard sells sunlight to people who have never seen it."), E(G.flags.lookAds ? "The holo-koi is still out there, swimming laps through the smog." : "Ad blimps drift between the towers. A koi the size of a tram swims through the haze, selling calm.")], () => { G.flags.lookAds = 1; }, false) },
   { id: "door", loc: "apt", x: 334, y: 114, kind: "ENTER", label: "Street", show: () => true, use: () => go("district", 46) },
   { id: "home", loc: "district", x: 42, y: 112, kind: "ENTER", label: "Apartment", show: () => true, use: () => go("apt", 326) },
   { id: "ad", loc: "district", x: 545, y: 92, kind: "EXAMINE", label: "Holo-ad", show: () => true, use: () => say([{ who: "", text: "AURELION. YOUR PAST, PERFECTED. A smiling family that has never existed waves at the rain." }, E("They sell childhoods by the gigabyte. Mara used to laugh at these ads.")], null, false) },
@@ -1464,7 +1472,7 @@ const CALL: Line[] = [
 ];
 function endCut(): void {
   G.scene = "play"; G.dlg = null; G.loc = "apt"; G.px = 104; G.facing = 1; G.cam = 0; G.zoom = 1; G.ringing = false; G.fade = 0.8; G.flags.called = 1; G.flags.rang = 1; G.lookX = 0;
-  G.banner = { a: "MISSION 001", b: "GHOSTS IN THE RAIN", t: 0 }; setMood("apt"); chime(); G.rev++;
+  G.banner = { a: "MISSION 001", b: "GHOSTS IN THE RAIN", t: 0 }; G.beat = 0; setMood("apt"); chime(); G.rev++;
 }
 function newGameStart(): void {
   const keep = { music: G.music, sfx: G.sfx, textSpeed: G.textSpeed };
@@ -1563,7 +1571,7 @@ function update(dt: number): void {
       if (!g.chat) g.chatCd = 1;
     }
   }
-  g.zoom += ((g.dlg && g.dlg.push ? 1.14 : 1) - g.zoom) * Math.min(1, dt * 2.5);
+  g.zoom += ((g.dlg && g.dlg.push ? 1.14 : g.beat !== -1 && g.px > 200 && g.loc === "apt" ? 1.12 : 1) - g.zoom) * Math.min(1, dt * (g.beat !== -1 ? 1.2 : 2.5));
   const LW = LOCW[g.loc];
   g.lookX += (g.facing * 16 - g.lookX) * Math.min(1, dt * 1.6);
   g.cam += (clamp(g.px + g.lookX - W / 2, 0, LW - W) - g.cam) * Math.min(1, dt * 4.5);
@@ -1582,8 +1590,17 @@ function update(dt: number): void {
   if (talking) dlgTick(dt);
   const busy = talking || g.fadeTo > 0;
   if (busy) { g.actQ = false; g.jumpQ = false; }
-  const dir = busy ? 0 : (g.right ? 1 : 0) - (g.left ? 1 : 0);
-  const tv = dir * (g.run ? 104 : 58);
+  // opening beat: Elias walks to the window and the camera lingers on the floating ads (tap to skip)
+  let bdir: number | null = null;
+  if (g.beat >= 0 && g.loc === "apt" && !busy) {
+    if (g.actQ || g.jumpQ || g.beat > 12) { g.beat = -1; g.actQ = false; g.jumpQ = false; }
+    else {
+      g.jumpQ = false; const tx = 212;
+      if (g.px < tx - 1) { bdir = 1; g.beat += dt * 0.25; } else { bdir = 0; g.facing = 1; g.beat += dt; if (g.vx === 0 && g.beat > 2.6 && !g.banner) { g.beat = -2; say([E("Every sky in this city is for sale. Tonight it's selling sleep.")], () => { G.beat = -1; }, false); } }
+    }
+  }
+  const dir = busy ? 0 : bdir !== null ? bdir : (g.right ? 1 : 0) - (g.left ? 1 : 0);
+  const tv = dir * (g.run ? 104 : 52);
   const turning = dir !== 0 && g.vx * dir < -4;
   const acc = g.grounded ? (dir === 0 ? 720 : turning ? 1100 : 560) : 330;
   g.vx = g.vx < tv ? Math.min(tv, g.vx + acc * dt) : Math.max(tv, g.vx - acc * dt);
@@ -1606,6 +1623,7 @@ function update(dt: number): void {
   animTick(dt);
   g.landT = Math.max(0, g.landT - dt); g.actT = Math.max(0, g.actT - dt);
   if (g.loc === "district" && g.obj === 1 && g.px > 1000) complete(1);
+  if (g.scene === "play" && g.fadeTo === 0) syncObj(false);
   if (busy) return;
   const n = nearest(); const nid = n ? n.id : "";
   if (nid !== g.near) { g.near = nid; g.rev++; }
@@ -1795,6 +1813,66 @@ function idleFx(b: Ctx, n: Npc, j: Joints, f: number, t: number): void {
   else if (n.idle === "scan" && n.wait > 0) { b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.12; b.fillStyle = "#e8f4ff"; b.beginPath(); b.moveTo(hx, hy); b.lineTo(hx + f * 44, FEET); b.lineTo(hx + f * 16, FEET); b.closePath(); b.fill(); b.restore(); R(b, hx - 1, hy, 2, 1, "#ffffff"); }
   else if (n.idle === "wrist" && n.wait > 0) { R(b, hx - 1, hy, 2, 1, "#3df5d0"); glow(b, hx, hy, 5, "61,245,208", 0.6); }
 }
+// ---------- window holo-ads (apartment view) ----------
+const APTAD: string[][] = [["AURELION", "SUNRISE DAILY", "255,176,80"], ["MERIDIAN", "SLEEP DEEPER", "90,232,220"], ["AURELION", "REMEMBER BETTER", "255,96,176"]];
+function aptAd(t: number): { i: number; rgb: string; k: number } {
+  const p = t / 5; const i = Math.floor(p) % 3; const f = p - Math.floor(p);
+  return { i, rgb: APTAD[i]?.[2] ?? "90,232,220", k: Math.min(1, f * 6, (1 - f) * 6) };
+}
+function windowAds(b: Ctx, wx: number, WY: number, WW: number, WH: number, t: number): void {
+  const hi = G.gfx > 0; const ad = aptAd(t);
+  b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.05 + 0.08 * ad.k; b.fillStyle = `rgb(${ad.rgb})`; b.fillRect(wx, WY + Math.round(WH * 0.35), WW, WH); b.restore();
+  if (hi) {
+    // a giant translucent holo-koi swimming slowly between the towers
+    const kd = Math.cos(t * 0.11) >= 0 ? 1 : -1; const kx = wx + WW / 2 + Math.sin(t * 0.11) * (WW / 2 - 4) + kd * 12; const ky = WY + 17 + Math.sin(t * 0.45) * 3;
+    const fl = h1(Math.floor(t * 7)) > 0.9 ? 0.5 : 1;
+    b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.42 * fl;
+    for (let i = 0; i < 28; i++) {
+      const u = i / 27; const th = u > 0.86 ? Math.round((u - 0.86) * 40) : Math.round(Math.sin(Math.min(1, u * 1.25) * Math.PI) * 5 * (1 - u * 0.4));
+      const yy = ky + Math.sin(t * 2.2 - u * 3.2) * u * 3;
+      b.fillStyle = u < 0.12 ? "#ffe6d6" : (i + Math.floor(t * 3)) % 7 === 0 ? "#fff4ee" : u > 0.86 ? "#ff6f9a" : "#ff9a62";
+      for (let r = -th; r <= th; r += 2) b.fillRect(Math.round(kx - i * kd), Math.round(yy + r), 1, 1);
+      if (i === 9) { b.fillRect(Math.round(kx - i * kd), Math.round(yy + th + 1), 2, 3); b.fillRect(Math.round(kx - (i + 1) * kd), Math.round(yy - th - 3), 3, 2); }
+    }
+    b.fillStyle = "#ffffff"; b.fillRect(Math.round(kx - 3 * kd), Math.round(ky - 1), 1, 1);
+    b.restore(); glow(b, kx - 12 * kd, ky, 20, "255,140,100", 0.22 * fl);
+    // tiny ad drones with blinking screens
+    for (let d = 0; d < 2; d++) {
+      const dx = wx + ((t * (5 + d * 3) + d * 47) % (WW + 20)) - 10; const dy = WY + 8 + d * 9 + Math.sin(t * 1.3 + d) * 1.5;
+      const a2 = APTAD[(ad.i + d + 1) % 3] ?? []; R(b, dx, dy, 5, 3, "#0a1014"); R(b, dx + 1, dy + 1, 3, 1, `rgb(${a2[2] ?? "90,232,220"})`);
+      if (Math.sin(t * 6 + d * 2) > 0.3) R(b, dx + 2, dy - 1, 1, 1, "#ff5a5a");
+      glow(b, dx + 2, dy + 2, 5, a2[2] ?? "90,232,220", 0.4);
+    }
+  }
+  // ad blimp with a scrolling screen, drifting across in ~40 s
+  const blimp = (ph: number, y: number, j: number, big: boolean): void => {
+    const L = big ? 30 : 18; const Hh = big ? 10 : 6; const span = WW + L;
+    const x = Math.round(wx + WW - ((t * (big ? 2.2 : 3.4) + ph) % span)); const yy = Math.round(y + Math.sin(t * 0.6 + j) * 1.2);
+    if (x > wx + WW + 4 || x + L < wx - 4) return;
+    R(b, x + 2, yy, L - 4, Hh, "#0c1418"); R(b, x, yy + 2, L, Hh - 4, "#0c1418"); R(b, x + L, yy + 1, 3, 2, "#0c1418"); R(b, x + L, yy + Hh - 3, 3, 2, "#0c1418");
+    R(b, x + 4, yy + Hh, L - 10, 2, "#0a0f12");
+    const a2 = APTAD[(ad.i + j) % 3] ?? []; const rgb = a2[2] ?? "90,232,220";
+    const sx0 = x + 2; const sy0 = yy + 2; const sw = L - 4; const sh = Hh - 4;
+    b.save(); b.beginPath(); b.rect(sx0, sy0, sw, sh); b.clip();
+    b.fillStyle = `rgba(${rgb},0.3)`; b.fillRect(sx0, sy0, sw, sh); b.fillStyle = "rgba(255,255,255,0.12)"; b.fillRect(sx0, sy0, sw, 1);
+    if (big) { const msg = (a2[0] ?? "") + "  " + (a2[1] ?? "") + "  "; const tw = msg.length * 4; const off = (t * 9) % tw; ptext(b, msg + msg, sx0 - off, sy0 + 1, "#fff4e6", 1); }
+    else { for (let k = 0; k < sw; k += 2) if (h1(k + Math.floor(t * 3) * 7 + j) > 0.45) R(b, sx0 + k, sy0 + 1, 1, 1, `rgb(${rgb})`); }
+    b.restore();
+    if (Math.sin(t * 4 + j) > 0.4) R(b, x + L + 1, yy + 1, 1, 1, "#ff5a5a");
+    glow(b, x + L / 2, yy + Hh / 2, L * 0.7, rgb, big ? 0.35 : 0.25);
+  };
+  blimp(0, WY + 4, 0, true);
+  if (hi) { blimp(30, WY + 26, 1, false); blimp(85, WY + 12, 2, false); }
+}
+function aptSpill(b: Ctx, cam: number, t: number): void {
+  if (!G.gfx) return;
+  const ad = aptAd(t); const wx = 196 - cam; const a = 0.05 + 0.07 * ad.k;
+  b.save(); b.globalCompositeOperation = "lighter";
+  const gr = b.createLinearGradient(wx + 40, 96, wx + 10, FEET + 4); gr.addColorStop(0, `rgba(${ad.rgb},${a})`); gr.addColorStop(1, `rgba(${ad.rgb},0)`);
+  b.fillStyle = gr; b.beginPath(); b.moveTo(wx, 96); b.lineTo(wx + 80, 96); b.lineTo(wx + 112, FEET + 6); b.lineTo(wx - 70, FEET + 6); b.closePath(); b.fill();
+  b.restore();
+  glow(b, wx + 40, FEET + 2, 46, ad.rgb, 0.12 * ad.k + 0.04);
+}
 function drawApt(b: Ctx, cc: Caches, cam: number, seated: boolean): void {
   const t = G.t;
   const wx = 196 - cam; const WY = 96; const WW = 80; const WH = 46;
@@ -1803,6 +1881,7 @@ function drawApt(b: Ctx, cc: Caches, cam: number, seated: boolean): void {
   b.fillStyle = sky; b.fillRect(wx, WY, WW, WH);
   b.drawImage(cc.far, 60 + t * 1.5 % 200, 40, 160, 130, wx - 6, WY - 4, 92, 74);
   b.drawImage(cc.mid, 300, 60, 140, 110, wx - 4, WY + 14, 88, 69);
+  windowAds(b, wx, WY, WW, WH, t);
   { const ax = wx + 48; const on = flick(t, 77); R(b, ax, WY + 4, 18, 11, on ? "rgba(255,150,60,0.2)" : "rgba(40,30,20,0.3)"); for (let a = 0; a < 10; a++) { const an = Math.PI + (a / 9) * Math.PI; R(b, ax + 9 + Math.cos(an) * 4, WY + 12 + Math.sin(an) * 4, 1, 1, on ? "#ffb04a" : "#5a3a1a"); } R(b, ax + 3, WY + 12, 12, 1, on ? "#ffd27a" : "#3a2a1a"); if (on) glow(b, ax + 9, WY + 9, 14, "255,170,80", 0.45); }
   for (const c of G.cars) { const x = wx + ((c.x * 0.3 % 100) + 100) % 100 - 10; const y = WY + 3 + c.y * 0.25; R(b, x, y, 4, 1, "#ffd08a"); glow(b, x, y, 3, "255,210,140", 0.6); }
   b.fillStyle = "rgba(180,230,220,0.35)";
@@ -1811,10 +1890,12 @@ function drawApt(b: Ctx, cc: Caches, cam: number, seated: boolean): void {
   for (let k = 0; k < 8; k++) { const x = wx + h1(k * 7.7) * (WW - 2); const y = WY + ((t * (4 + k) + k * 13) % WH); b.fillRect(Math.round(x), Math.round(y), 1, 2); }
   b.restore();
   b.drawImage(cc.apt, cam, 0, W, H, 0, 0, W, H);
-  b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.06; b.fillStyle = "#5ff0d8";
+  const adc = aptAd(t);
+  b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.05 + 0.04 * adc.k; b.fillStyle = `rgb(${adc.rgb})`;
   b.beginPath(); b.moveTo(wx, 96); b.lineTo(wx + 80, 96); b.lineTo(wx + 104, FEET + 6); b.lineTo(wx - 12, FEET + 6); b.closePath(); b.fill(); b.restore();
   if (G.sweep < 0 && !seated) { const p = clamp(-G.sweep / 2.2, 0, 1); const bx0 = wx + 110 - p * 300; b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = Math.sin(p * Math.PI) * 0.16; const sg = b.createLinearGradient(bx0 - 24, 0, bx0 + 24, 0); sg.addColorStop(0, "rgba(255,220,170,0)"); sg.addColorStop(0.5, "rgba(255,220,170,1)"); sg.addColorStop(1, "rgba(255,220,170,0)"); b.fillStyle = sg; b.beginPath(); b.moveTo(bx0 - 10, 80); b.lineTo(bx0 + 10, 80); b.lineTo(bx0 + 26, FEET); b.lineTo(bx0 - 22, FEET); b.closePath(); b.fill(); b.restore(); }
   glow(b, 121 - cam, 138, 26, "255,180,100", 0.6);
+  if (G.gfx) glow(b, 124 - cam, 140, 30, adc.rgb, 0.1 + 0.1 * adc.k);
   R(b, 118 - cam, 137, 6, 1, "#ffe0a0");
   const sx = 137 - cam;
   for (let k = 0; k < 5; k++) if (h1(k + Math.floor(t * 2)) > 0.25) R(b, sx + 1, 133 + k * 2, 4 + Math.floor(h1(k * 3 + Math.floor(t)) * 13), 1, "#5dff9a");
@@ -1935,6 +2016,7 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     drawApt(b, cc, cam, seated);
     drawNpcs(b, cam);
     if (!seated) drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
+    aptSpill(b, cam, t);
     reflect(b, rc, buf, rbuf, 0.1, [], cam);
     if (seated && g.sceneT < 9) { b.globalAlpha = clamp(1 - (g.sceneT - 8) / 0.9, 0, 1); R(b, 0, 0, W, H, "#000"); b.globalAlpha = 1; }
   } else if (g.loc === "district") {
@@ -2168,10 +2250,10 @@ function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, in
       c.fillStyle = "rgba(2,10,12,0.7)"; c.fillRect(m, m, tw + fsS, fsS * 1.9);
       c.fillStyle = "#ffd8a0"; c.fillText(txt, m + fsS / 2, m + fsS * 0.95);
       const fh = Math.round(fsS * 0.9); c.font = `${fh}px ${mono}`;
-      const hl = g.near ? [] : wrapText(c, oi.hint, Math.min(cw * 0.62, 420 * dpr));
+      let hintW = 0; const hl = g.near ? [] : wrapText(c, oi.hint, Math.min(cw * 0.62, 420 * dpr));
       let hy = m + fsS * 2.05;
       if (hl.length) {
-        const hw = Math.max(...hl.map((l: string) => c.measureText(l).width)) + fsS;
+        const hw = Math.max(...hl.map((l: string) => c.measureText(l).width)) + fsS; hintW = hw;
         c.fillStyle = "rgba(2,10,12,0.55)"; c.fillRect(m, hy, hw, hl.length * fh * 1.3 + fh * 0.5);
         c.fillStyle = "#a8e0d4"; hl.forEach((l: string, i: number) => c.fillText(l, m + fsS / 2, hy + fh * 0.9 + i * fh * 1.3));
         hy += hl.length * fh * 1.3 + fh * 0.7;
@@ -2187,18 +2269,51 @@ function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, in
           c.fillText(right ? "▶▶" : "◀◀", right ? cw - 8 * dpr : 8 * dpr, toY(FEET - 30)); c.textAlign = "left"; c.globalAlpha = 1; c.font = `${fsS}px ${mono}`;
         }
       }
+      // labels sit above the tallest head nearby and never overlap each other or the HUD
+      const hudB = hy + fsS * 1.9; const hudW = Math.max(tw + fsS, cwd + fsS, hintW) + m;
+      const placed: number[][] = [];
+      if (g.toast) placed.push([0, ch * 0.22 - 2 * dpr, cw, fsS * 2 + 4 * dpr]);
+      const headTop = (wx: number, wy: number): number => {
+        let tp = wy;
+        if (Math.abs(g.px - wx) < 14) tp = Math.min(tp, g.py - 33);
+        for (const o of g.npcs) if (o.loc === g.loc && Math.abs(o.x - wx) < 14) tp = Math.min(tp, o.y - o.look.h - 3);
+        for (const pd of g.peds) if (pd.loc === g.loc && pd.lane === 1 && Math.abs(pd.x - wx) < 12) tp = Math.min(tp, FEET - pd.look.h - (pd.kind === "umb" || pd.kind === "neon" ? 9 : 3));
+        return tp;
+      };
+      const hit = (r: number[], q: number[]): boolean => (r[0] ?? 0) < (q[0] ?? 0) + (q[2] ?? 0) && (q[0] ?? 0) < (r[0] ?? 0) + (r[2] ?? 0) && (r[1] ?? 0) < (q[1] ?? 0) + (q[3] ?? 0) && (q[1] ?? 0) < (r[1] ?? 0) + (r[3] ?? 0);
+      const place = (cx: number, bottom: number, w: number, h: number, must: boolean): number[] | null => {
+        const g2 = 3 * dpr; const ys = [bottom - h]; for (const q of placed) { const ny = (q[1] ?? 0) - g2 - h; if (ny < bottom - h) ys.push(ny); }
+        const cands: number[][] = [];
+        for (const y of ys) for (const dx of [0, -0.55, 0.55, -1.1, 1.1, -1.7, 1.7, -2.4, 2.4]) { const x = clamp(cx - w / 2 + dx * w, 4, cw - w - 4); cands.push([x, Math.max(4, y), (bottom - h - y) + Math.abs(x - (cx - w / 2)) * 0.7]); }
+        cands.sort((a2: number[], b2: number[]) => (a2[2] ?? 0) - (b2[2] ?? 0));
+        const ok = (x: number, y: number): boolean => !(x < hudW && y < hudB) && !placed.some((q: number[]) => hit([x, y, w, h], [(q[0] ?? 0) - g2, (q[1] ?? 0) - g2, (q[2] ?? 0) + g2 * 2, (q[3] ?? 0) + g2 * 2]));
+        const fit = cands.find((k2: number[]) => (must || Math.abs((k2[0] ?? 0) + w / 2 - cx) <= w * 0.75) && ok(k2[0] ?? 0, k2[1] ?? 0)); if (!fit && !must) return null;
+        const best = fit ?? cands[0] ?? [cx - w / 2, bottom - h];
+        const out = [best[0] ?? 0, best[1] ?? 0, w, h]; placed.push(out); return out;
+      };
       const n = nearest();
       if (n && g.fadeTo === 0) {
-        const lab = n.kind === "ACCESS" ? (n.label ? "Access " + n.label.toLowerCase() : "Access terminal") : (KL[n.kind] + (n.label ? " · " + n.label : ""));
-        tag(c, lab, toX(n.x), toY(n.y) + Math.sin(g.t * 4) * 2 * dpr, fsS, "#ffb04a", mono);
+        const lab = n.id === "window" ? "Look · Window" : n.kind === "ACCESS" ? (n.label ? "Access " + n.label.toLowerCase() : "Access terminal") : (KL[n.kind] + (n.label ? " · " + n.label : ""));
+        c.font = `bold ${fsS}px ${mono}`; const lw2 = c.measureText(lab).width + fsS * 1.2; const lh = fsS * 1.8;
+        const bob = Math.sin(g.t * 4) * 1.5 * dpr;
+        const wy = n.kind === "SPEAK" ? headTop(n.x, n.y + 10) : Math.min(n.y, headTop(n.x, n.y));
+        const r = place(toX(n.x), toY(wy) - 4 * dpr + bob, lw2, lh, true) ?? [0, 0];
+        tag(c, lab, (r[0] ?? 0) + lw2 / 2, r[1] ?? 0, fsS, "#ffb04a", mono);
       }
-      for (const np of g.npcs) if (np.loc === g.loc && np.bubbleT > 0 && np.bubble) {
-        c.font = `${fsS}px ${mono}`;
-        const ls = wrapText(c, np.bubble, 150 * dpr); const bw = Math.max(...ls.map((l: string) => c.measureText(l).width)) + fsS;
-        const bx = clamp(toX(np.x) - bw / 2, 4, cw - bw - 4); const by = toY(np.y - np.look.h - 6) - ls.length * fsS * 1.3 - fsS;
-        c.fillStyle = "rgba(240,236,224,0.92)"; c.fillRect(bx, by, bw, ls.length * fsS * 1.3 + fsS * 0.6);
+      const talkers = g.npcs.filter((o: Npc) => o.loc === g.loc && o.bubbleT > 0 && !!o.bubble).sort((a2: Npc, b2: Npc) => Math.abs(a2.x - g.px) - Math.abs(b2.x - g.px));
+      for (const np of talkers) {
+        c.font = `${fsS}px ${mono}`; const nh = fsS * 1.1;
+        let ls: string[] = []; let bw = 0; let bh = 0; let r: number[] | null = null;
+        for (const ww of [130, 230]) {
+          ls = wrapText(c, np.bubble, ww * dpr); bw = Math.max(...ls.map((l: string) => c.measureText(l).width)) + fsS;
+          bh = ls.length * fsS * 1.3 + fsS * 0.6;
+          r = place(toX(np.x), toY(headTop(np.x, np.y - np.look.h - 3)) - 4 * dpr, bw, bh + nh, false); if (r) break;
+        }
+        if (!r) continue;
+        const bx = r[0] ?? 0; const by = (r[1] ?? 0) + nh;
+        c.fillStyle = "rgba(240,236,224,0.92)"; c.fillRect(bx, by, bw, bh);
         c.fillStyle = "#101418"; c.textBaseline = "top"; ls.forEach((l: string, i: number) => c.fillText(l, bx + fsS / 2, by + fsS * 0.3 + i * fsS * 1.3));
-        c.font = `bold ${Math.round(fsS * 0.8)}px ${mono}`; c.fillStyle = "#e8e0d0"; c.fillText(np.name, bx, by - fsS * 1.1);
+        c.font = `bold ${Math.round(fsS * 0.8)}px ${mono}`; c.fillStyle = "rgba(4,10,14,0.82)"; c.fillRect(bx, by - nh, c.measureText(np.name).width + fsS * 0.6, nh); c.fillStyle = "#e8e0d0"; c.fillText(np.name, bx + fsS * 0.3, by - nh + fsS * 0.1);
       }
     }
   }
