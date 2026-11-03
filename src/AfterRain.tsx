@@ -13,8 +13,8 @@ type LocId = "apt" | "district" | "market" | "pier" | "lab";
 const LOCW: Record<LocId, number> = { apt: 360, district: 1400, market: 900, pier: 1100, lab: 520 };
 // holo-ads only make sound out here; the apartment and Lab 7 are indoors
 function outside(l: LocId): boolean { return l === "district" || l === "market" || l === "pier"; }
-const FW = Math.ceil(340 + 1400 * 0.15);
-const MW = Math.ceil(340 + 1400 * 0.45);
+const FW = Math.ceil(340 + 2600 * 0.15);
+const MW = Math.ceil(340 + 2600 * 0.45);
 const KW = Math.ceil(340 + 900 * 0.6);
 
 function h1(n: number): number { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
@@ -141,7 +141,7 @@ function genLayer(seed: number, span: number, wMin: number, wMax: number, hMin: 
   }
   return out;
 }
-const HW = Math.ceil(340 + 1400 * 0.06);
+const HW = Math.ceil(340 + 2600 * 0.06);
 function bakeHaze(c: Ctx): void {
   for (const bd of genLayer(7, HW, 14, 34, 70, 140)) {
     const top = FEET - 18 - bd.h;
@@ -270,12 +270,192 @@ function drawParts(b: Ctx, cam: number): void {
   for (const p of G.parts) { b.globalAlpha = clamp(p.l / p.m, 0, 1) * 0.6; R(b, p.x - cam, p.y, 1, 1, p.c); }
   b.globalAlpha = 1;
 }
+// ---------- hover-ferry: Kessler Street <-> Tidewater Pier, one continuous shot ----------
+// Ride-space uses Kessler Street coordinates continued east over open water; the pier starts at ROFF.
+// ROFF is a multiple of 840 so the quay lamps (24px) and water posts (140px) line up when the pier takes over.
+const ROFF = 2520;
+const RFD = 1270; // ferry berth on Kessler Street (left edge of the hull)
+const RFP = ROFF + 6; // ferry berth at the pier
+const PFX = 130; const PMX = 410; // pier skyline offsets so the parallax layers never read off the left edge
+let RIDEC: HTMLCanvasElement | null = null;
+let FHUM: { s: AudioBufferSourceNode; o: OscillatorNode; g: GainNode } | null = null;
+const FERRY_TALK: Line[] = [
+  { who: "ELIAS", text: "Last hover-ferry still running out past the seawall. Rust holding rust together." },
+  { who: "NOVA", text: "You're on the water. Good. The gate cameras watch the street, not the canal." },
+  { who: "ELIAS", text: "Every sign out here is still selling. Nobody left to buy." },
+  { who: "NOVA", text: "Pump house is at the far end of the pier. Don't make me regret this." },
+];
+function ferryOpen(): boolean { return G.obj >= M1N && !!G.flags.knowLab; }
+function blitH(c: Ctx, img: HTMLCanvasElement, sx: number, dy: number, h: number): void {
+  const x0 = Math.max(0, sx); const x1 = Math.min(img.width, sx + W); if (x1 - x0 < 1) return;
+  c.drawImage(img, x0, 0, x1 - x0, h, x0 - sx, dy, x1 - x0, h);
+}
+function ferryHum(on: boolean): void {
+  if (!SND) return;
+  const c = SND.ctx; const now = c.currentTime;
+  if (on) {
+    if (FHUM) return;
+    try {
+      const s = c.createBufferSource(); s.buffer = SND.noise; s.loop = true;
+      const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 240;
+      const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.value = 46;
+      const of = c.createBiquadFilter(); of.type = "lowpass"; of.frequency.value = 170;
+      const og = c.createGain(); og.gain.value = 0.5;
+      const g = c.createGain(); g.gain.setValueAtTime(0.0001, now); g.gain.linearRampToValueAtTime(0.14, now + 0.9);
+      s.connect(f); f.connect(g); o.connect(of); of.connect(og); og.connect(g); g.connect(SND.sfx);
+      s.start(now); o.start(now); FHUM = { s, o, g };
+    } catch { FHUM = null; }
+  } else if (FHUM) {
+    const h = FHUM; FHUM = null;
+    h.g.gain.setTargetAtTime(0.0001, now, 0.3); try { h.s.stop(now + 1.6); h.o.stop(now + 1.6); } catch { /* already stopped */ }
+  }
+}
+function rideSeen(dx: number): void { const s: Record<string, number> = {}; for (const k of Object.keys(ADV.seen)) s[String(Number(k) + dx)] = 1; ADV.seen = s; ADV.gl = {}; }
+function startRide(dir: number): void {
+  const g = G; if (g.ride) return;
+  if (dir < 0) { g.px += ROFF; g.cam += ROFF; if (g.fly) g.fly.x += ROFF; g.loc = "district"; ADV.loc = "district"; rideSeen(ROFF); }
+  g.ride = { dir, ph: 0, t: 0, fx: dir > 0 ? RFD : RFP, v: 0, x0: g.px, y0: g.py };
+  g.vx = 0; g.vy = 0; g.facing = dir; g.left = false; g.right = false;
+  ferryHum(true); noiseHit(0.12, 500, 0.12); tone(70, 0.35, "sine", 0.06, 0.25, -20);
+  g.rev++;
+}
+function finishRide(): void {
+  const g = G; const r = g.ride; if (!r) return;
+  g.ride = null; ferryHum(false);
+  if (r.dir > 0) {
+    g.loc = "pier"; g.px -= ROFF; g.cam = Math.max(0, g.cam - ROFF); if (g.fly) g.fly.x -= ROFF;
+    ADV.loc = "pier"; rideSeen(-ROFF); setMood("pier"); g.flags.ferry1 = 1;
+  } else { setMood("district"); complete(0); }
+  g.py = FEET; g.vx = 0; g.vy = 0; g.grounded = true; g.landT = 0.12; g.lookX = 0;
+  saveGame(true); g.rev++;
+}
+function rideTick(dt: number): void {
+  const g = G; const r = g.ride; if (!r) return;
+  r.t += dt;
+  const DY = FEET + 8;
+  const deck = r.fx + (r.dir > 0 ? 70 : 22);
+  const hop = (x1: number, y1: number, k: number): void => {
+    const e = k * k * (3 - 2 * k);
+    g.px = r.x0 + (x1 - r.x0) * e; g.py = r.y0 + (y1 - r.y0) * e - Math.sin(k * Math.PI) * 7; g.grounded = k >= 1;
+    g.walk += dt * 2;
+  };
+  if (r.ph === 0) {
+    const k = clamp(r.t / 0.6, 0, 1); hop(deck, DY, k);
+    if (k >= 1) { r.ph = 1; r.t = 0; g.landT = 0.15; noiseHit(0.1, 380, 0.14); }
+  } else if (r.ph === 1) {
+    const tgt = r.dir > 0 ? RFP : RFD; const rem = (tgt - r.fx) * r.dir;
+    const V = (r.dir > 0 && !g.flags.ferry1 ? 70 : 115) * (g.run ? 1.6 : 1);
+    const vmax = Math.min(V, Math.sqrt(2 * 26 * Math.max(0, rem)) + 3);
+    r.v = r.v < vmax ? Math.min(vmax, r.v + 26 * dt) : vmax;
+    r.fx += r.v * r.dir * dt;
+    if ((tgt - r.fx) * r.dir <= 0.5) { r.fx = tgt; r.v = 0; r.ph = 2; r.t = 0; noiseHit(0.18, 300, 0.16); tone(90, 0.3, "triangle", 0.05, 0, -30); }
+    g.px = r.fx + (r.dir > 0 ? 70 : 22); g.py = DY; g.grounded = true;
+    if (r.dir > 0 && g.cam > 1700 && MOOD !== "pier") setMood("pier");
+    if (r.dir < 0 && g.cam < 1700 && MOOD !== "district") setMood("district");
+    if (r.dir > 0 && !g.flags.ferryTalk && r.fx > RFD + 150 && !g.dlg) { g.flags.ferryTalk = 1; ring(); say(FERRY_TALK, null, false); }
+    if (FHUM && SND && Math.random() < dt * 5) FHUM.o.frequency.setTargetAtTime(44 + r.v * 0.3, SND.ctx.currentTime, 0.3);
+  } else if (r.ph === 2) {
+    if (!g.dlg && r.t > 0.35) { r.ph = 3; r.t = 0; r.x0 = g.px; r.y0 = g.py; }
+  } else {
+    const k = clamp(r.t / 0.6, 0, 1); hop(r.dir > 0 ? ROFF + 82 : RFD + 20, FEET, k);
+    if (k >= 1 && r.t > 0.6) { g.landT = 0.12; noiseHit(0.08, 600, 0.1); r.ph = 4; r.t = 0; }
+  }
+  // camera: rides ahead of Elias, then settles exactly on the framing the next place uses
+  const lo = r.dir > 0 ? 0 : 1400 - W; const hi = r.dir > 0 ? ROFF : ROFF + LOCW.pier - W;
+  const tgtC = r.ph >= 2 ? (r.dir > 0 ? ROFF : 1400 - W) : clamp(g.px - (r.dir > 0 ? W * 0.4 : W * 0.6), lo, hi);
+  g.cam += (tgtC - g.cam) * Math.min(1, dt * 1.6);
+  if (r.ph === 4) { if (Math.abs(g.cam - tgtC) < 0.6 || r.t > 2) { g.cam = tgtC; finishRide(); } }
+}
+function drawFerry(b: Ctx, x: number, t: number, v: number, dir: number, part: number): number {
+  x = Math.round(x);
+  const oy = Math.round(Math.sin(t * 2.1) * 0.9); const y = FEET + 8 + oy;
+  if (x < -110 || x > W + 20) return oy;
+  if (part === 1) { R(b, x + 2, y - 6, 88, 1, "#6a5a48"); for (let k = 0; k <= 11; k++) R(b, x + 2 + k * 8, y - 6, 1, 6, "#3e342a"); return oy; }
+  b.globalAlpha = 0.55; R(b, x + 2, y + 10, 88, 3, "#010406"); b.globalAlpha = 1;
+  const jp = 0.35 + 0.12 * Math.sin(t * 9);
+  glow(b, x + 19, y + 9, 16, "61,245,208", jp); glow(b, x + 73, y + 9, 16, "61,245,208", jp);
+  if (v > 2) for (let i = 0; i < 7; i++) { const wx = dir > 0 ? x - 6 - i * 7 : x + 94 + i * 7; b.globalAlpha = Math.min(0.7, v / 90) * (1 - i / 7); R(b, wx + Math.round(h1(i + Math.floor(t * 8)) * 3), y + 9 + (i % 2), 5, 1, "#cfefff"); } b.globalAlpha = 1;
+  // far rail, cabin, hull
+  R(b, x + 4, y - 4, 84, 1, "#3a3028");
+  R(b, x + 34, y - 20, 24, 20, "#1b2428"); R(b, x + 33, y - 21, 26, 2, "#3a4a52"); R(b, x + 34, y - 2, 24, 2, "#141a1e");
+  R(b, x + 36, y - 17, 8, 5, "#2a8a80"); R(b, x + 48, y - 17, 8, 5, "#2a8a80"); glow(b, x + 46, y - 14, 14, "61,245,208", 0.35);
+  R(b, x + (dir > 0 ? 51 : 39), y - 16, 3, 4, "#0a1214"); R(b, x + (dir > 0 ? 50 : 38), y - 12, 5, 1, "#0a1214");
+  R(b, x + 45, y - 33, 1, 12, "#2a3438"); if (Math.sin(t * 3) > 0.4) { R(b, x + 45, y - 34, 1, 1, "#ff4a4a"); glow(b, x + 45, y - 34, 6, "255,74,74", 0.8); }
+  R(b, x + 35, y - 29, 22, 7, "#0a1014"); neon(b, "FERRY", x + 36, y - 28, "#ffb04a", t, 91, 1);
+  R(b, x + 3, y, 86, 7, "#2b1d16"); R(b, x, y, 92, 2, "#4d3222"); R(b, x + 1, y + 2, 2, 3, "#2b1d16"); R(b, x + 89, y + 2, 2, 3, "#2b1d16");
+  R(b, x + 5, y + 7, 82, 1, "#170f0b"); R(b, x + 6, y + 3, 80, 1, "#b85a26");
+  for (let k = 0; k < 10; k++) R(b, x + 7 + k * 8 + (k % 3), y + 4, 1, 1 + (k % 3), "#6a3a1e");
+  R(b, x + 14, y + 7, 10, 2, "#1b2a2e"); R(b, x + 68, y + 7, 10, 2, "#1b2a2e"); R(b, x + 15, y + 8, 8, 1, "#3df5d0"); R(b, x + 69, y + 8, 8, 1, "#3df5d0");
+  R(b, x + 1, y - 9, 2, 2, "#ffd08a"); R(b, x + 89, y - 9, 2, 2, "#ffd08a"); glow(b, x + 2, y - 8, 10, "255,200,120", 0.6); glow(b, x + 90, y - 8, 10, "255,200,120", 0.6);
+  R(b, x + 2, y - 9, 1, 3, "#3e342a"); R(b, x + 89, y - 9, 1, 3, "#3e342a");
+  return oy;
+}
+// open water between the seawall and the pier: ad pylons, buoys, a drowned van
+function rideProps(b: Ctx, cam: number, t: number): void {
+  const S = (x: number): number => Math.round(x - cam);
+  holoAd(b, S(1560), 40, 50, 32, "moon", t, 81);
+  holoAd(b, S(1860), 50, 44, 30, "koi", t, 83);
+  holoAd(b, S(2140), 34, 56, 34, "eye", t, 85);
+  [1490, 1700, 1990, 2290, 2450].forEach((bx: number, i: number) => {
+    const sx = S(bx); if (sx < -10 || sx > W + 10) return;
+    const by = FEET - 4 + Math.round(Math.sin(t * 1.6 + bx) * 1);
+    R(b, sx - 2, by, 5, 4, "#1a1f22"); R(b, sx, by - 6, 1, 6, "#2a3034");
+    if (Math.sin(t * 2.5 + bx) > 0.3) { R(b, sx, by - 7, 1, 1, i % 2 ? "#ff4a4a" : "#5dff9a"); glow(b, sx, by - 7, 7, i % 2 ? "255,74,74" : "93,255,154", 0.8); }
+  });
+  { const sx = S(1760); if (sx > -30 && sx < W + 4) { R(b, sx, FEET - 3, 26, 3, "#14202a"); R(b, sx + 4, FEET - 5, 16, 2, "#1a2a34"); R(b, sx + 21, FEET - 3, 2, 1, h1(Math.floor(t * 2)) > 0.6 ? "#ff7a3a" : "#3a1a10"); } }
+}
+function renderRide(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement, cc: Caches): void {
+  const g = G; const t = g.t; const r = g.ride; if (!r) return;
+  const cam = Math.round(g.cam); const pc = cam - ROFF;
+  b.setTransform(SC, 0, 0, SC, 0, -YO * SC);
+  // skyline: Kessler's backdrop hands over to the open harbour one while only water is in front
+  const k = clamp((cam - 1500) / 400, 0, 1);
+  if (k < 1) city(b, cc, cam * 0.15, cam * 0.45, t, cam);
+  if (k > 0) {
+    if (k >= 1) { city(b, cc, pc * 0.12 + PFX, pc * 0.4 + PMX, t, pc, true); pierBack(b, pc, t); }
+    else {
+      if (!RIDEC || RIDEC.width !== W * SC) { RIDEC = document.createElement("canvas"); RIDEC.width = W * SC; RIDEC.height = H * SC; }
+      const o = RIDEC.getContext("2d");
+      if (o) {
+        o.imageSmoothingEnabled = false; o.setTransform(SC, 0, 0, SC, 0, -YO * SC); o.globalAlpha = 1; o.globalCompositeOperation = "source-over";
+        city(o, cc, pc * 0.12 + PFX, pc * 0.4 + PMX, t, pc, true); pierBack(o, pc, t);
+        b.save(); b.setTransform(1, 0, 0, 1, 0, 0); b.globalAlpha = k; b.drawImage(RIDEC, 0, 0); b.restore();
+      }
+    }
+  }
+  if (cam < 1400) {
+    blitH(b, cc.dist, cam, 0, H);
+    if (g.gfx) { const hz = b.createLinearGradient(0, YO, 0, FEET); hz.addColorStop(0, "rgba(70,170,145,0.4)"); hz.addColorStop(0.65, "rgba(50,140,120,0.12)"); hz.addColorStop(1, "rgba(40,110,100,0)"); b.fillStyle = hz; b.fillRect(0, YO, Math.min(W, 1400 - cam), FEET - YO); }
+    drawDistrictDyn(b, cam); drawLife(b, cam, t, false); drawProps(b, cam); drawHauler(b, cam, t); drawPeds(b, cam, 0); drawNpcs(b, cam);
+    drawDistrictFront(b, cam); drawPeds(b, cam, 1); drawLife(b, cam, t, true); vents(b, cam, [332, 846], t);
+  }
+  rideProps(b, cam, t);
+  if (pc > -W - 40) {
+    const L = g.loc; g.loc = "pier";
+    blitH(b, cc.pier, pc, 0, H);
+    drawPierDyn(b, pc); drawLife(b, pc, t, false); drawPeds(b, pc, 0); drawNpcs(b, pc); drawPierFront(b, pc); drawPeds(b, pc, 1); drawLife(b, pc, t, true);
+    g.loc = L;
+  }
+  drawFly(b, cam, t);
+  b.setTransform(SC, 0, 0, SC, 0, 0);
+  waterPlane(b, rc, buf, rbuf, cam, t, 1400 - cam, ROFF - cam);
+  b.setTransform(SC, 0, 0, SC, 0, -YO * SC);
+  const fx = r.fx - cam;
+  const oy = drawFerry(b, fx, t, r.v, r.dir, 0);
+  const onDeck = r.ph === 1 || r.ph === 2;
+  glow(b, g.px - cam, g.py - 12 + (onDeck ? oy : 0), 18, "255,190,120", 0.16);
+  drawElias(b, g.px - cam, g.py + (onDeck ? oy : 0), g.facing, r.ph === 1 || r.ph === 2 ? "idle" : eliasState(), g.walk, t);
+  drawFerry(b, fx, t, r.v, r.dir, 1);
+  drawParts(b, cam);
+  b.setTransform(SC, 0, 0, SC, 0, 0);
+  rain(b, 0.9);
+}
 function drawFg(f: Ctx, cc: Caches): void {
   const g = G; const cam = g.cam; const L = g.loc;
   f.setTransform(1, 0, 0, 1, 0, 0); f.globalAlpha = 1; f.globalCompositeOperation = "source-over";
   f.clearRect(0, 0, W, H);
   const top = L === "district" ? cc.topD : L === "market" ? cc.topM : null;
-  if (top) f.drawImage(top, Math.round(cam * 1.2), 0, W, top.height, 0, 0, W, top.height);
+  if (top) blitH(f, top, Math.round(cam * 1.2), 0, top.height);
   if (!SIL) { SIL = document.createElement("canvas"); SIL.width = 100; SIL.height = 45; }
   const sc = SIL.getContext("2d");
   if (sc) {
@@ -289,7 +469,7 @@ function drawFg(f: Ctx, cc: Caches): void {
       if (p.kind === "umb") umbrella(sc, p.dir * 2, -p.look.h - 2, 10, "#030507", "");
       sc.restore();
     }
-    if (any) { f.save(); f.imageSmoothingEnabled = true; f.globalAlpha = 0.82; f.drawImage(SIL, 0, 0, 100, 45, 0, 0, 400, 180); f.restore(); }
+    if (any && !g.ride) { f.save(); f.imageSmoothingEnabled = true; f.globalAlpha = 0.82; f.drawImage(SIL, 0, 0, 100, 45, 0, 0, 400, 180); f.restore(); }
   }
   if (!g.gfx) return;
   const bk = L === "district" ? cc.bokD : L === "market" ? cc.bokM : L === "pier" ? cc.bokP : cc.bokA; const bh = bk.height;
@@ -297,7 +477,8 @@ function drawFg(f: Ctx, cc: Caches): void {
   const gr = f.createLinearGradient(0, gy, 0, H); gr.addColorStop(0, "rgba(2,6,8,0)"); gr.addColorStop(1, "rgba(2,6,8,0.6)");
   f.fillStyle = gr; f.fillRect(0, gy, W, H - gy);
   f.globalCompositeOperation = "lighter"; f.globalAlpha = L === "apt" || L === "lab" ? 0.4 : 0.75 + Math.sin(g.t * 0.7) * 0.08;
-  f.drawImage(bk, Math.round(cam * 1.3), 0, W, bh, 0, H - bh, W, bh);
+  blitH(f, bk, Math.round(cam * 1.3), H - bh, bh);
+  if (g.ride) blitH(f, cc.bokP, Math.round((cam - ROFF) * 1.3), H - cc.bokP.height, cc.bokP.height);
   f.globalAlpha = 1; f.globalCompositeOperation = "source-over";
   if (L === "district" || L === "pier") {
     f.fillStyle = "rgba(210,240,235,0.2)"; const span = W + 60;
@@ -1394,6 +1575,8 @@ function drawPeds(b: Ctx, cam: number, lane: number): void {
 type Chat = { a: Npc; b: Npc; l: string[]; t: number };
 type Part = { x: number; y: number; vx: number; vy: number; l: number; m: number; c: string };
 type Fly = { x: number; y: number; dir: number; speed: number; snd: boolean };
+// hover-ferry ride between Kessler Street and Tidewater Pier: ph 0 step aboard, 1 sail, 2 docked, 3 step off
+type Ride = { dir: number; ph: number; t: number; fx: number; v: number; x0: number; y0: number };
 type Game = {
   scene: Scene; t: number; sceneT: number; loc: LocId;
   px: number; py: number; vx: number; vy: number; grounded: boolean; facing: number; walk: number; stepPh: number; landT: number; actT: number; actKind: string;
@@ -1403,8 +1586,8 @@ type Game = {
   left: boolean; right: boolean; jumpQ: boolean; actQ: boolean; run: boolean;
   panel: Panel; rev: number; near: string; toast: { text: string; t: number } | null; banner: { a: string; b: string; t: number } | null;
   npcs: Npc[]; chat: Chat | null; chatCd: number; drops: Drop[]; cars: Car[]; flash: number;
-  music: number; sfx: number; amb: number; gfx: number; textSpeed: number; saveNote: string; bagTab: string; openItem: string; ringing: boolean;
-  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; beat: number; sweep: number; sndT: number; lookX: number; peds: Ped[]; tramOn: boolean; kits: Kit[]; birds: Bird[]; ambT: number;
+  music: number; sfx: number; amb: number; adv: number; gfx: number; textSpeed: number; saveNote: string; bagTab: string; openItem: string; ringing: boolean;
+  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; ride: Ride | null; beat: number; sweep: number; sndT: number; lookX: number; peds: Ped[]; tramOn: boolean; kits: Kit[]; birds: Bird[]; ambT: number;
 };
 
 const LK: Record<string, Look> = {
@@ -1474,8 +1657,8 @@ function newGame(): Game {
     left: false, right: false, jumpQ: false, actQ: false, run: false,
     panel: "none", rev: 1, near: "", toast: null, banner: null,
     npcs: makeNpcs(), chat: null, chatCd: 6, drops: makeDrops(), cars: makeCars(), flash: 0,
-    music: 0.6, sfx: 0.7, amb: 0.7, gfx: 1, textSpeed: 1, saveNote: "", bagTab: "items", openItem: "", ringing: false,
-    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, beat: -1, sweep: 6, sndT: 0, lookX: 0, peds: makePeds(), tramOn: false, ...makeLife(), ambT: 0,
+    music: 0.6, sfx: 0.7, amb: 0.7, adv: 0.9, gfx: 1, textSpeed: 1, saveNote: "", bagTab: "items", openItem: "", ringing: false,
+    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, ride: null, beat: -1, sweep: 6, sndT: 0, lookX: 0, peds: makePeds(), tramOn: false, ...makeLife(), ambT: 0,
   };
 }
 const G: Game = newGame();
@@ -1489,12 +1672,14 @@ function syncDir(): void {
 }
 
 // ---------- audio ----------
-type Snd = { ctx: AudioContext; music: GainNode; sfx: GainNode; pads: Record<string, GainNode>; rain: GainNode; rainF: BiquadFilterNode; noise: AudioBuffer; amb: GainNode; hum: GainNode; murmur: GainNode; steam: GainNode; buzz: GainNode };
+type Snd = { ctx: AudioContext; music: GainNode; sfx: GainNode; pads: Record<string, GainNode>; rain: GainNode; rainF: BiquadFilterNode; noise: AudioBuffer; amb: GainNode; hum: GainNode; murmur: GainNode; steam: GainNode; buzz: GainNode; adOut: GainNode };
 let SND: Snd | null = null;
 let MOOD = "";
 const CHORDS: Record<string, number[]> = { menu: [110, 130.8, 164.8], apt: [98, 116.5, 146.8], district: [110, 138.6, 164.8, 207.7], market: [92.5, 110, 138.6, 185], glitch: [103.8, 110, 155.6], pier: [87.3, 110, 130.8, 174.6], lab: [77.8, 92.5, 116.5], vision: [110, 138.6, 164.8, 220] };
 function audioInit(): void {
-  if (SND) { if (SND.ctx.state === "suspended") void SND.ctx.resume(); return; }
+  if (SND) { if (SND.ctx.state !== "running") void SND.ctx.resume(); speechPrime(); return; }
+  // iOS 17+: let the game sound play like media (holo-ads, music) instead of being treated as quiet ambient audio
+  try { const as = (navigator as unknown as { audioSession?: { type: string } }).audioSession; if (as && as.type !== "playback") as.type = "playback"; } catch { /* not supported */ }
   const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AC) return;
   try {
@@ -1525,20 +1710,21 @@ function audioInit(): void {
     }
     const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);
     void ctx.resume();
-    SND = { ctx, music, sfx, pads, rain, rainF, noise, amb, hum, murmur, steam, buzz };
-    // iOS: speech only works after a call made inside a user gesture, so prime it silently here
-    if (speechOk()) { try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; window.speechSynthesis.speak(u); } catch { /* no speech */ } }
+    // holo-ads get their own output straight to the speakers, not through the Ambience slider
+    const adOut = ctx.createGain(); adOut.gain.value = G.adv; adOut.connect(ctx.destination);
+    SND = { ctx, music, sfx, pads, rain, rainF, noise, amb, hum, murmur, steam, buzz, adOut };
+    speechPrime();
     const m = MOOD || "menu"; MOOD = ""; setMood(m);
   } catch { SND = null; }
 }
-function applyVol(): void { if (SND) { SND.music.gain.setTargetAtTime(G.music * 0.5, SND.ctx.currentTime, 0.05); SND.sfx.gain.setTargetAtTime(G.sfx, SND.ctx.currentTime, 0.05); SND.amb.gain.setTargetAtTime(G.amb, SND.ctx.currentTime, 0.05); } }
+function applyVol(): void { if (SND) { SND.music.gain.setTargetAtTime(G.music * 0.5, SND.ctx.currentTime, 0.05); SND.sfx.gain.setTargetAtTime(G.sfx, SND.ctx.currentTime, 0.05); SND.amb.gain.setTargetAtTime(G.amb, SND.ctx.currentTime, 0.05); SND.adOut.gain.setTargetAtTime(G.adv, SND.ctx.currentTime, 0.05); } }
 function setMood(m: string): void {
   if (m === MOOD) return; MOOD = m;
   if (!SND) return;
   const now = SND.ctx.currentTime;
   for (const k of Object.keys(SND.pads)) { const p = SND.pads[k]; if (p) p.gain.setTargetAtTime(k === m ? 1 : 0, now, 0.9); }
   const rv = m === "district" ? 0.16 : m === "pier" ? 0.13 : m === "menu" ? 0.14 : m === "apt" ? 0.045 : m === "market" ? 0.015 : m === "lab" ? 0.02 : 0;
-  SND.rain.gain.setTargetAtTime(rv, now, 0.6);
+  RAINV = rv; SND.rain.gain.setTargetAtTime(rv, now, 0.6);
   SND.rainF.frequency.setTargetAtTime(m === "apt" || m === "lab" ? 900 : m === "pier" ? 1700 : 2200, now, 0.5);
   const ag = (n: GainNode, v: number): void => { n.gain.setTargetAtTime(v, now, 0.8); };
   ag(SND.hum, m === "district" ? 0.5 : m === "pier" ? 0.42 : m === "lab" ? 0.3 : m === "menu" ? 0.35 : m === "market" ? 0.25 : m === "apt" ? 0.14 : 0.05);
@@ -1596,101 +1782,225 @@ function whoosh(dir: number): void {
   try { const p = c.createStereoPanner(); p.pan.setValueAtTime(-0.8 * dir, t0); p.pan.linearRampToValueAtTime(0.8 * dir, t0 + 2.4); g.connect(p); out = p; } catch { out = g; }
   out.connect(SND.sfx); s.start(t0); s.stop(t0 + 2.5);
 }
-// ---------- holo-ad audio: brand jingles, a soft pad, and a low announcer, only outdoors ----------
-type AdDef = { n: number[]; f: number; w: OscillatorType; pad: number[]; say: string[] };
+// ---------- holo-ad audio: every brand has its own instrument, tempo, melody, voice and flicker sting; outdoors only ----------
+// st = seconds per note, inst = instrument, vp/vr = speech pitch/rate, vf/vw/vc = synth announcer pitch, timbre and contour
+type AdDef = { st: number; n: number[]; f: number; inst: string; pad: number[]; padW: OscillatorType; sting: string; vp: number; vr: number; vf: number; vw: OscillatorType; vc: number; say: string[] };
 const ADSND: Record<string, AdDef> = {
-  aur: { n: [0, 4, 7, 12, 7], f: 392, w: "sine", pad: [196, 293.7, 392], say: ["Aurelion. Your past, perfected.", "Remember better. Aurelion."] },
-  sun: { n: [0, 2, 4, 9], f: 523.3, w: "triangle", pad: [261.6, 329.6, 392], say: ["Halcyon. Bottled sun, for cloudy hearts.", "Feel the sun again. Halcyon."] },
-  koi: { n: [7, 4, 7, 12, 9], f: 440, w: "square", pad: [220, 277.2, 329.6], say: ["Koi Koi noodles. Slurp the rain away."] },
-  eye: { n: [0, 0, -5], f: 329.6, w: "sine", pad: [110, 164.8, 220], say: ["Sentry. We see you. Safely.", "Stay in the light. Sentry is watching over you."] },
-  heart: { n: [0, 3, 7, 10, 7], f: 349.2, w: "triangle", pad: [174.6, 207.7, 261.6], say: ["Meridian. Feel again.", "Lonely? Meridian. Feelings, on demand."] },
-  moon: { n: [12, 7, 3, 0], f: 466.2, w: "sine", pad: [116.5, 138.6, 174.6], say: ["Dreamline. Sleep deeper tonight."] },
+  aur: { st: 0.34, n: [0, 7, 12, 16, 19, 24], f: 261.6, inst: "bell", pad: [130.8, 196, 329.6], padW: "sine", sting: "shimmer", vp: 0.85, vr: 0.82, vf: 150, vw: "triangle", vc: 0, say: ["Aurelion. Your past, perfected.", "Remember better. Aurelion."] },
+  sun: { st: 0.2, n: [0, 4, 7, 9, 7, 12, 9, 12], f: 523.3, inst: "marimba", pad: [261.6, 329.6, 392], padW: "triangle", sting: "whoop", vp: 1.45, vr: 1.08, vf: 235, vw: "sawtooth", vc: 1, say: ["Halcyon. Bottled sun, for cloudy hearts.", "Feel the sun again. Halcyon."] },
+  koi: { st: 0.15, n: [12, 12, 7, 9, 12, 16, 14, 19], f: 659.3, inst: "chip", pad: [220, 277.2, 329.6], padW: "triangle", sting: "coin", vp: 1.9, vr: 1.25, vf: 290, vw: "square", vc: 1, say: ["Koi Koi noodles. Slurp the rain away.", "Hot, fast, Koi Koi!"] },
+  eye: { st: 0.85, n: [0, -1, -5], f: 98, inst: "brass", pad: [55, 82.4, 110], padW: "sawtooth", sting: "radar", vp: 0.3, vr: 0.78, vf: 78, vw: "sawtooth", vc: 2, say: ["Sentry. We see you. Safely.", "Stay in the light. Sentry is watching over you."] },
+  heart: { st: 0.32, n: [0, 3, 7, 10, 12, 10], f: 349.2, inst: "epiano", pad: [174.6, 207.7, 261.6], padW: "sine", sting: "heartbeat", vp: 1.1, vr: 0.88, vf: 185, vw: "triangle", vc: 0, say: ["Meridian. Feel again.", "Lonely? Meridian. Feelings, on demand."] },
+  moon: { st: 0.46, n: [19, 16, 12, 7, 4, 0], f: 523.3, inst: "musicbox", pad: [116.5, 138.6, 174.6], padW: "sine", sting: "chime", vp: 0.7, vr: 0.72, vf: 120, vw: "triangle", vc: 0, say: ["Dreamline. Sleep deeper tonight.", "Close your eyes. Dreamline."] },
 };
-const ADS: Partial<Record<LocId, [number, string][]>> = {
-  district: [[86, "eye"], [545, "aur"], [820, "koi"], [962, "heart"], [1254, "sun"]],
-  market: [[271, "moon"], [873, "heart"]],
-  pier: [[586, "heart"], [863, "sun"], [1010, "eye"]],
+const ADK = Object.keys(ADSND);
+// [world x, brand, flicker seed of the sign drawn there (-1 = steady)]
+type AdSpot = [number, string, number];
+const ADS: Partial<Record<LocId, AdSpot[]>> = {
+  district: [[86, "eye", 31], [545, "aur", -1], [820, "koi", 33], [962, "heart", 35], [1254, "sun", 37], [1585, "moon", 81], [1882, "koi", 83], [2168, "eye", 85], [3106, "heart", 65], [3383, "sun", 67], [3530, "eye", 69]],
+  market: [[271, "moon", 51], [873, "heart", 53]],
+  pier: [[586, "heart", 65], [863, "sun", 67], [1010, "eye", 69]],
 };
-type AdNodes = { bus: GainNode; padG: GainNode; pan: StereoPannerNode | null; oscs: OscillatorNode[] };
-const ADV: { n: AdNodes | null; cd: number; spk: number; last: string; pad: string; voice: boolean } = { n: null, cd: 4, spk: 8, last: "", pad: "", voice: false };
+type AdNodes = { bus: GainNode; comp: AudioNode; padG: GainNode; pan: StereoPannerNode | null; oscs: OscillatorNode[] };
+type AdTalk = { at: number; key: string; text: string; vol: number; pan: number };
+const ADV = { n: null as AdNodes | null, cd: 2, spk: 0, scd: 0, last: "", pad: "", voice: false, primed: false, vl: false, sFail: 0, loc: "", talk: null as AdTalk | null, seen: {} as Record<string, number>, gl: {} as Record<string, number>, stat: { jingle: 0, sting: 0, synthVoice: 0, speech: 0, peak: 0 } };
+let RAINV = 0;
+let VOICES: SpeechSynthesisVoice[] = [];
 function speechOk(): boolean { return typeof window !== "undefined" && typeof (window as unknown as { speechSynthesis?: unknown }).speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined"; }
+function loadVoices(): void { if (!speechOk()) return; try { const v = window.speechSynthesis.getVoices(); const en = v.filter((x: SpeechSynthesisVoice) => /^en/i.test(x.lang)); if (en.length) VOICES = en; } catch { /* no voices yet */ } }
+// iOS only lets speech start after a speak() inside a real tap, so this runs on every tap until one primer actually plays
+function speechPrime(): void {
+  if (ADV.primed || !speechOk() || ADV.voice) return;
+  try {
+    const ss = window.speechSynthesis; loadVoices();
+    if (!ADV.vl) { ADV.vl = true; try { ss.addEventListener("voiceschanged", loadVoices); } catch { /* old webkit */ } }
+    const u = new SpeechSynthesisUtterance("."); u.volume = 0.01; u.rate = 2;
+    u.onstart = () => { ADV.primed = true; }; u.onend = () => { ADV.primed = true; };
+    ss.cancel(); ss.resume(); ss.speak(u);
+  } catch { /* no speech */ }
+}
 function adHush(): void { if (ADV.voice && speechOk()) { try { window.speechSynthesis.cancel(); } catch { /* no speech */ } } ADV.voice = false; }
 function adNodes(): AdNodes | null {
   if (ADV.n || !SND) return ADV.n;
   try {
-    const c = SND.ctx; const bus = c.createGain(); bus.gain.value = 0; bus.connect(SND.amb);
-    const padG = c.createGain(); padG.gain.value = 0; const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1100;
+    const c = SND.ctx; const bus = c.createGain(); bus.gain.value = 0;
+    // a gentle compressor keeps the brands loud and even over rain and music, then straight to the unlocked output
+    let comp: AudioNode = bus;
+    try { const k = c.createDynamicsCompressor(); k.threshold.value = -24; k.knee.value = 10; k.ratio.value = 4; k.attack.value = 0.003; k.release.value = 0.25; bus.connect(k); comp = k; } catch { comp = bus; }
+    const mk = c.createGain(); mk.gain.value = 1.15; comp.connect(mk); mk.connect(SND.adOut);
+    const padG = c.createGain(); padG.gain.value = 0; const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1300;
     let pan: StereoPannerNode | null = null;
     try { pan = c.createStereoPanner(); padG.connect(lp); lp.connect(pan); pan.connect(bus); } catch { pan = null; padG.connect(lp); lp.connect(bus); }
     const oscs: OscillatorNode[] = [];
-    for (let k = 0; k < 3; k++) { const o = c.createOscillator(); o.type = k === 2 ? "triangle" : "sine"; o.frequency.value = 220; o.detune.value = (k - 1) * 6; const og = c.createGain(); og.gain.value = 0.33; o.connect(og); og.connect(padG); o.start(); oscs.push(o); }
-    ADV.n = { bus, padG, pan, oscs };
+    for (let k = 0; k < 3; k++) { const o = c.createOscillator(); o.type = "sine"; o.frequency.value = 220; o.detune.value = (k - 1) * 6; const og = c.createGain(); og.gain.value = 0.33; o.connect(og); og.connect(padG); o.start(); oscs.push(o); }
+    ADV.n = { bus, comp, padG, pan, oscs };
   } catch { ADV.n = null; }
   return ADV.n;
 }
-function adJingle(key: string, vol: number, pan: number): void {
-  const d = ADSND[key]; const n = adNodes(); if (!d || !n || !SND) return;
-  const c = SND.ctx; const t0 = c.currentTime + 0.05;
-  const g = c.createGain(); g.gain.value = vol;
-  let out: AudioNode = g;
-  try { const p = c.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); g.connect(p); out = p; } catch { out = g; }
-  out.connect(n.bus);
-  d.n.forEach((st: number, i: number) => {
-    const f = d.f * Math.pow(2, st / 12); const at = t0 + i * 0.16; const o = c.createOscillator(); o.type = d.w; o.frequency.setValueAtTime(f, at);
-    const e = c.createGain(); e.gain.setValueAtTime(0, at); e.gain.linearRampToValueAtTime(d.w === "square" ? 0.25 : 0.6, at + 0.015); e.gain.exponentialRampToValueAtTime(0.0001, at + 0.42);
-    o.connect(e); e.connect(g); o.start(at); o.stop(at + 0.45);
-    const o2 = c.createOscillator(); o2.type = "sine"; o2.frequency.setValueAtTime(f * 2, at); const e2 = c.createGain(); e2.gain.setValueAtTime(0, at); e2.gain.linearRampToValueAtTime(0.12, at + 0.01); e2.gain.exponentialRampToValueAtTime(0.0001, at + 0.6); o2.connect(e2); e2.connect(g); o2.start(at); o2.stop(at + 0.62);
-  });
+function adChain(vol: number, pan: number, dst: AudioNode): GainNode | null {
+  if (!SND) return null;
+  const c = SND.ctx; const g = c.createGain(); g.gain.value = vol;
+  try { const p = c.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); g.connect(p); p.connect(dst); } catch { g.connect(dst); }
+  return g;
 }
-// synth announcer fallback: a buzzy formant murmur, one blip per syllable
-function adMurmur(text: string, vol: number, pan: number): void {
-  const n = adNodes(); if (!n || !SND) return;
-  const c = SND.ctx; const t0 = c.currentTime + 0.8; const syl = Math.min(14, Math.max(3, Math.round(text.length / 4)));
-  const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(96, t0);
-  const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 4; const g = c.createGain(); g.gain.setValueAtTime(0, t0);
-  for (let k = 0; k < syl; k++) { const at = t0 + k * 0.17; bp.frequency.setValueAtTime(500 + h1(k + text.length) * 900, at); o.frequency.setValueAtTime(92 + h1(k * 3) * 14 - k * 0.8, at); g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(vol, at + 0.03); g.gain.linearRampToValueAtTime(vol * 0.2, at + 0.14); }
-  g.gain.linearRampToValueAtTime(0, t0 + syl * 0.17 + 0.05);
-  let out: AudioNode = g;
-  try { const p = c.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); g.connect(p); out = p; } catch { out = g; }
-  o.connect(bp); bp.connect(g); out.connect(n.bus); o.start(t0); o.stop(t0 + syl * 0.17 + 0.1);
+function adEnv(c: AudioContext, at: number, a: number, peak: number, dec: number): GainNode { const g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(Math.max(0.0002, peak), at + a); g.gain.exponentialRampToValueAtTime(0.0001, at + a + dec); return g; }
+function adOsc(c: AudioContext, dst: AudioNode, type: OscillatorType, f: number, at: number, a: number, peak: number, dec: number): OscillatorNode {
+  const o = c.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, at); const g = adEnv(c, at, a, peak, dec); o.connect(g); g.connect(dst); o.start(at); o.stop(at + a + dec + 0.05); return o;
 }
-function adSpeak(text: string, vol: number, pan: number): void {
-  if (speechOk()) {
-    try {
-      const u = new SpeechSynthesisUtterance(text); u.pitch = 0.6; u.rate = 0.92; u.volume = clamp(vol, 0, 0.25); u.lang = "en-US";
-      u.onend = () => { ADV.voice = false; }; u.onerror = () => { ADV.voice = false; };
-      setTimeout(() => { if (!G.dlg && outside(G.loc) && G.scene === "play" && G.fadeTo === 0) { ADV.voice = true; window.speechSynthesis.speak(u); } }, 900);
-      return;
-    } catch { /* fall through to the synth voice */ }
+function adNoise(c: AudioContext, dst: AudioNode, at: number, dur: number, type: BiquadFilterType, f: number, peak: number): void {
+  if (!SND) return;
+  const s = c.createBufferSource(); s.buffer = SND.noise; const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = 1.2;
+  const g = adEnv(c, at, 0.003, peak, dur); s.connect(fl); fl.connect(g); g.connect(dst); s.start(at, Math.random()); s.stop(at + dur + 0.05);
+}
+function adKick(c: AudioContext, dst: AudioNode, at: number, peak: number, f0: number): void { const o = adOsc(c, dst, "sine", f0, at, 0.004, peak, 0.28); o.frequency.exponentialRampToValueAtTime(38, at + 0.22); }
+// one note in the brand's own instrument
+function adNote(c: AudioContext, dst: AudioNode, inst: string, f: number, at: number, amp: number): void {
+  if (inst === "bell") { // glassy FM bell, long ring
+    const car = adOsc(c, dst, "sine", f, at, 0.004, amp, 1.4);
+    const m = c.createOscillator(); m.frequency.setValueAtTime(f * 3.5, at); const mg = c.createGain(); mg.gain.setValueAtTime(f * 2.2, at); mg.gain.exponentialRampToValueAtTime(f * 0.05, at + 1.2); m.connect(mg); mg.connect(car.frequency); m.start(at); m.stop(at + 1.45);
+    adOsc(c, dst, "sine", f * 2, at, 0.004, amp * 0.25, 0.8);
+  } else if (inst === "marimba") { adOsc(c, dst, "sine", f, at, 0.003, amp, 0.32); adOsc(c, dst, "sine", f * 4, at, 0.002, amp * 0.35, 0.07); adOsc(c, dst, "triangle", f * 2, at, 0.003, amp * 0.25, 0.18); }
+  else if (inst === "chip") { const o = adOsc(c, dst, "square", f, at, 0.002, amp * 0.5, 0.14); o.frequency.setValueAtTime(f * 2, at); o.frequency.exponentialRampToValueAtTime(f, at + 0.025); adOsc(c, dst, "square", f / 2, at, 0.002, amp * 0.18, 0.1); }
+  else if (inst === "brass") { // dark, slow, filtered brass stab with a sub
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 5; lp.frequency.setValueAtTime(220, at); lp.frequency.linearRampToValueAtTime(1800, at + 0.14); lp.frequency.exponentialRampToValueAtTime(450, at + 0.8); lp.connect(dst);
+    for (const dt of [-8, 8]) { const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(f * 2, at); o.detune.value = dt; const g = c.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(amp * 0.5, at + 0.08); g.gain.setValueAtTime(amp * 0.5, at + 0.55); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.95); o.connect(g); g.connect(lp); o.start(at); o.stop(at + 1); }
+    adOsc(c, dst, "sine", f, at, 0.02, amp * 0.7, 0.85);
+  } else if (inst === "epiano") { // warm electric piano with vibrato
+    const o = adOsc(c, dst, "sine", f, at, 0.005, amp * 0.85, 0.9); const tr = c.createOscillator(); tr.frequency.value = 5.5; const tg = c.createGain(); tg.gain.value = 9; tr.connect(tg); tg.connect(o.detune); tr.start(at); tr.stop(at + 0.95);
+    adOsc(c, dst, "sine", f * 2, at, 0.003, amp * 0.32, 0.3); adOsc(c, dst, "triangle", f * 3, at, 0.002, amp * 0.1, 0.12);
+  } else { // music box: high, tinkly, wobbly
+    const o = adOsc(c, dst, "sine", f * 2, at, 0.002, amp * 0.8, 1.0); const vb = c.createOscillator(); vb.frequency.value = 4; const vg = c.createGain(); vg.gain.value = 10; vb.connect(vg); vg.connect(o.detune); vb.start(at); vb.stop(at + 1.05);
+    adOsc(c, dst, "sine", f * 6, at, 0.001, amp * 0.2, 0.25);
   }
-  adMurmur(text, vol * 0.25, pan);
+}
+function adDuckRain(t0: number, dur: number): void { if (!SND || RAINV <= 0) return; SND.rain.gain.setTargetAtTime(RAINV * 0.45, t0, 0.12); SND.rain.gain.setTargetAtTime(RAINV, t0 + dur, 0.9); }
+// a brand's full jingle; returns its length in seconds
+function adJingle(key: string, vol: number, pan: number): number {
+  const d = ADSND[key]; const n = adNodes(); if (!d || !n || !SND) return 0;
+  const c = SND.ctx; const t0 = c.currentTime + 0.05; const g = adChain(vol, pan, n.bus); if (!g) return 0;
+  d.n.forEach((sem: number, i: number) => {
+    const at = t0 + i * d.st; const f = d.f * Math.pow(2, sem / 12);
+    adNote(c, g, d.inst, f, at, i === d.n.length - 1 ? 0.75 : 0.6);
+    if (key === "koi") { if (i % 2 === 1) adNoise(c, g, at, 0.08, "bandpass", 2200, 0.5); else adKick(c, g, at, 0.55, 150); }
+    else if (key === "sun") adNoise(c, g, at, 0.05, "highpass", 7000, 0.22);
+    else if (key === "heart" && i % 2 === 0) { adKick(c, g, at, 0.7, 90); adKick(c, g, at + 0.18, 0.45, 80); }
+    else if (key === "eye" && i === 0) adKick(c, g, at, 0.9, 70);
+  });
+  const dur = d.n.length * d.st + (d.inst === "bell" || d.inst === "musicbox" ? 1.1 : 0.6);
+  adDuckRain(t0, dur); ADV.stat.jingle++;
+  return dur;
+}
+// the electric flicker a sign makes as it comes on, followed by the brand's sting
+function adSting(key: string, vol: number, pan: number, dst?: AudioNode): void {
+  const d = ADSND[key]; const n = adNodes(); if (!d || !n || !SND) return;
+  const c = SND.ctx; const t0 = c.currentTime + 0.03; const g = adChain(vol, pan, dst ?? n.bus); if (!g) return;
+  adNoise(c, g, t0, 0.05, "highpass", 3500, 0.35); adNoise(c, g, t0 + 0.07, 0.04, "highpass", 3000, 0.25);
+  const bz = adOsc(c, g, "sawtooth", 120, t0, 0.005, 0.12, 0.12); bz.frequency.setValueAtTime(120, t0);
+  const t = t0 + 0.12;
+  if (d.sting === "shimmer") { [1, 1.5, 2, 3, 4, 6].forEach((m: number, i: number) => adNote(c, g, "bell", 392 * m, t + i * 0.05, 0.3)); adNoise(c, g, t, 0.6, "bandpass", 6000, 0.12); }
+  else if (d.sting === "whoop") { const o = adOsc(c, g, "sine", 420, t, 0.02, 0.6, 0.45); o.frequency.exponentialRampToValueAtTime(1700, t + 0.22); o.frequency.exponentialRampToValueAtTime(1250, t + 0.4); adNote(c, g, "marimba", 1046.5, t + 0.25, 0.4); }
+  else if (d.sting === "coin") { adNote(c, g, "chip", 987.8, t, 0.6); adNote(c, g, "chip", 1318.5, t + 0.08, 0.7); }
+  else if (d.sting === "radar") { adOsc(c, g, "sine", 1250, t, 0.003, 0.5, 0.9); adNote(c, g, "brass", 110, t, 0.45); adNote(c, g, "brass", 82.4, t + 0.35, 0.45); }
+  else if (d.sting === "heartbeat") { adKick(c, g, t, 0.9, 95); adKick(c, g, t + 0.2, 0.65, 85); adNote(c, g, "epiano", 698.5, t + 0.4, 0.35); }
+  else { [1568, 1318.5, 1046.5, 784, 659.3].forEach((f: number, i: number) => adNote(c, g, "musicbox", f / 2, t + i * 0.08, 0.35)); }
+  ADV.stat.sting++;
+}
+function adCrackle(vol: number, pan: number): void { const n = adNodes(); if (!n || !SND) return; const g = adChain(vol, pan, n.bus); if (g) adNoise(SND.ctx, g, SND.ctx.currentTime + Math.random() * 0.2, 0.03, "highpass", 4000, 0.6); }
+// synth announcer: a talk-box voice (buzz through vowel formants) in the brand's own pitch and cadence; works with no speech engine at all
+const VOW: Record<string, number[]> = { a: [800, 1200, 2500], e: [450, 1900, 2600], i: [320, 2300, 3000], o: [520, 900, 2400], u: [360, 800, 2300], y: [320, 2200, 2900] };
+function adTalk(key: string, text: string, vol: number, pan: number): number {
+  const d = ADSND[key]; const n = adNodes(); if (!d || !n || !SND) return 0;
+  const c = SND.ctx; const t0 = c.currentTime + 0.05;
+  const syl = (text.toLowerCase().match(/[aeiouy]+/g) ?? ["a"]).slice(0, 16).map((s: string) => s.charAt(0));
+  const sd = 0.17 / d.vr; const end = t0 + syl.length * sd + 0.12;
+  const out = adChain(vol, pan, n.bus); if (!out) return 0;
+  const amp = c.createGain(); amp.gain.setValueAtTime(0, t0); amp.connect(out);
+  const src = c.createOscillator(); src.type = d.vw; src.frequency.setValueAtTime(d.vf, t0);
+  const fs = 0.92 + 0.12 * d.vp;
+  const fl = [0, 1, 2].map((k: number) => { const b = c.createBiquadFilter(); b.type = "bandpass"; b.Q.value = 7 + k * 3; const fg = c.createGain(); fg.gain.value = [3.2, 1.8, 1][k] ?? 1; src.connect(b); b.connect(fg); fg.connect(amp); return b; });
+  syl.forEach((v: string, k: number) => {
+    const at = t0 + k * sd; const F = VOW[v] ?? VOW.a ?? [800, 1200, 2500];
+    fl.forEach((b: BiquadFilterNode, j: number) => b.frequency.setTargetAtTime((F[j] ?? 1000) * fs, at, 0.02));
+    const p = d.vc === 1 ? d.vf * (k % 2 ? 1.25 : 1) : d.vc === 2 ? d.vf * (k === syl.length - 1 ? 0.84 : 1) : d.vf * (1.12 - 0.24 * (k / syl.length));
+    src.frequency.setTargetAtTime(p, at, 0.015);
+    amp.gain.setValueAtTime(0, at); amp.gain.linearRampToValueAtTime(1, at + 0.025); amp.gain.linearRampToValueAtTime(0.55, at + sd * 0.7); amp.gain.linearRampToValueAtTime(0.04, at + sd * 0.95);
+    if (k % 2 === 0) adNoise(c, out, at, 0.03, "highpass", 2600, 0.3);
+  });
+  amp.gain.linearRampToValueAtTime(0, end);
+  src.start(t0); src.stop(end + 0.05);
+  adDuckRain(t0, end - t0); ADV.stat.synthVoice++;
+  return end - t0;
+}
+// real speech when the device allows it; if it has not started within 0.7s (blocked frame, voices still loading), the synth announcer speaks instead
+function adSpeak(key: string, text: string, vol: number, pan: number): void {
+  const d = ADSND[key]; if (!d) return;
+  let started = false;
+  if (speechOk() && (ADV.sFail < 3 || ADV.primed)) {
+    try {
+      const u = new SpeechSynthesisUtterance(text); u.pitch = d.vp; u.rate = d.vr; u.volume = clamp(vol * G.adv * 1.2, 0.4, 1); u.lang = "en-US";
+      if (VOICES.length) { const v = VOICES[(ADK.indexOf(key) * 3) % VOICES.length]; if (v) u.voice = v; }
+      u.onstart = () => { started = true; ADV.voice = true; ADV.sFail = 0; ADV.primed = true; ADV.stat.speech++; };
+      u.onend = () => { ADV.voice = false; }; u.onerror = () => { ADV.voice = false; };
+      window.speechSynthesis.speak(u);
+    } catch { /* fall back */ }
+  }
+  setTimeout(() => {
+    if (started) return;
+    if (speechOk()) { try { window.speechSynthesis.cancel(); } catch { /* no speech */ } }
+    ADV.sFail++;
+    if (!G.dlg && outside(G.loc) && G.scene === "play") adTalk(key, text, vol, pan);
+  }, speechOk() ? 700 : 0);
+}
+// Settings preview: plays the brand nearest Elias (or Aurelion) at the new level, even indoors
+function adPreview(): void {
+  const n = adNodes(); if (!n || !SND) return;
+  const list = ADS[G.loc] ?? []; let k = "aur"; let bd = 1e9;
+  for (const a of list) { const dd = Math.abs(a[0] - G.px); if (dd < bd) { bd = dd; k = a[1]; } }
+  adSting(k, 0.6, 0, n.comp);
 }
 function adTick(step: number): void {
   if (!SND) return;
   const n = adNodes(); if (!n) return;
   const g = G; const now = SND.ctx.currentTime;
-  const ext = outside(g.loc) && g.scene === "play" && g.fadeTo === 0 && g.panel === "none";
-  n.bus.gain.setTargetAtTime(ext ? (g.dlg ? 0.22 : 1) : 0, now, ext ? 0.8 : 0.3);
+  const ext = outside(g.loc) && g.scene === "play" && g.fadeTo === 0;
+  // dialogue and menus duck the ads, they never mute them
+  n.bus.gain.setTargetAtTime(!ext ? 0 : g.dlg ? 0.4 : g.panel !== "none" ? 0.55 : 1, now, ext ? 0.25 : 0.3);
   if (!ext || g.dlg) adHush();
-  if (!ext) { n.padG.gain.setTargetAtTime(0, now, 0.4); return; }
-  const list = ADS[g.loc] ?? []; let best: [number, string] | null = null; let bd = 1e9;
-  for (const a of list) { const d = Math.abs(a[0] - g.px); if (d < bd) { bd = d; best = a; } }
-  if (!best) return;
-  const prox = clamp(1 - bd / 220, 0, 1); const pan = clamp((best[0] - g.cam - W / 2) / (W / 2), -1, 1) * 0.8;
-  const def = ADSND[best[1]];
-  if (def && ADV.pad !== best[1]) { ADV.pad = best[1]; n.oscs.forEach((o: OscillatorNode, i: number) => o.frequency.setTargetAtTime(def.pad[i] ?? (def.pad[0] ?? 220) * 2, now, 0.6)); }
-  n.padG.gain.setTargetAtTime(0.05 * Math.pow(prox, 1.5), now, 0.5);
-  if (n.pan) n.pan.pan.setTargetAtTime(pan, now, 0.3);
-  ADV.cd -= step; ADV.spk -= step;
-  if (ADV.cd > 0 || g.dlg) return;
-  const near = list.filter((a: [number, string]) => Math.abs(a[0] - g.px) < 260);
-  if (near.length === 0) { ADV.cd = 2; return; }
-  const pick = near.find((a: [number, string]) => a[1] !== ADV.last && Math.random() < 0.6) ?? near[0];
+  if (!ext) { n.padG.gain.setTargetAtTime(0, now, 0.4); ADV.loc = ""; ADV.talk = null; return; }
+  if (ADV.loc !== g.loc) { ADV.loc = g.loc; ADV.cd = 1.2; ADV.seen = {}; ADV.gl = {}; ADV.scd = 0; }
+  const list = ADS[g.loc] ?? []; const mid = g.cam + W / 2;
+  // anything on screen plays at full level; signs just off screen fade out over 320px
+  const prox = (x: number): number => clamp(1 - Math.max(0, Math.abs(x - mid) - (W / 2 + 24)) / 320, 0, 1);
+  const panOf = (x: number): number => clamp((x - mid) / (W / 2), -1, 1) * 0.7;
+  ADV.scd -= step; ADV.spk -= step;
+  let best: AdSpot | null = null; let bp = 0;
+  for (const a of list) {
+    const p = prox(a[0]); if (p > bp) { bp = p; best = a; }
+    const vis = Math.abs(a[0] - mid) < W / 2 + 10; const id = String(a[0]);
+    const glitch = a[2] >= 0 && h1(a[2] * 3.3 + Math.floor(g.t * 0.4)) > 0.75;
+    const was = ADV.gl[id]; ADV.gl[id] = glitch ? 1 : 0;
+    if (vis && glitch && Math.random() < 0.5) adCrackle(0.18, panOf(a[0]));
+    const fresh = vis && !ADV.seen[id]; if (vis) ADV.seen[id] = 1;
+    if (vis && (fresh || (was === 1 && !glitch)) && ADV.scd <= 0) { ADV.scd = 1.4; adSting(a[1], 0.55, panOf(a[0])); }
+  }
+  if (best) {
+    const def = ADSND[best[1]];
+    if (def && ADV.pad !== best[1]) { ADV.pad = best[1]; n.oscs.forEach((o: OscillatorNode, i: number) => { o.type = def.padW; o.frequency.setTargetAtTime(def.pad[i] ?? 220, now, 0.6); }); }
+    n.padG.gain.setTargetAtTime(0.07 * bp, now, 0.5);
+    if (n.pan) n.pan.pan.setTargetAtTime(panOf(best[0]), now, 0.3);
+  } else n.padG.gain.setTargetAtTime(0, now, 0.5);
+  if (ADV.talk && now >= ADV.talk.at) { const q = ADV.talk; ADV.talk = null; if (!g.dlg) adSpeak(q.key, q.text, q.vol, q.pan); }
+  ADV.cd -= step;
+  if (ADV.cd > 0) return;
+  const near = list.filter((a: AdSpot) => prox(a[0]) > 0.05).sort((a: AdSpot, b: AdSpot) => prox(b[0]) - prox(a[0]));
+  if (near.length === 0) { ADV.cd = 1; return; }
+  const pick = near.find((a: AdSpot) => a[1] !== ADV.last && prox(a[0]) >= 0.99) ?? near[0];
   if (!pick) return;
-  const pp = clamp(1 - Math.abs(pick[0] - g.px) / 260, 0, 1); const ppan = clamp((pick[0] - g.cam - W / 2) / (W / 2), -1, 1) * 0.85;
-  adJingle(pick[1], 0.07 * (0.25 + 0.75 * pp), ppan); ADV.last = pick[1]; ADV.cd = 6 + Math.random() * 5;
+  const pp = prox(pick[0]); const pn = panOf(pick[0]);
+  const dur = adJingle(pick[1], 0.6 * (0.35 + 0.65 * pp), pn);
+  ADV.last = pick[1]; ADV.cd = (dur + 3 + Math.random() * 3) * (g.dlg ? 2 : 1);
   const d = ADSND[pick[1]];
-  if (d && ADV.spk <= 0 && pp > 0.3 && g.amb > 0.05 && Math.random() < 0.45) { ADV.spk = 18 + Math.random() * 10; adSpeak(pickR(d.say), 0.25 * g.amb * (0.4 + 0.6 * pp), ppan); }
+  if (d && !g.dlg && pp > 0.5 && ADV.spk <= 0) { ADV.spk = 8 + Math.random() * 5; ADV.talk = { at: now + dur - 0.2, key: pick[1], text: pickR(d.say), vol: 0.8 * (0.5 + 0.5 * pp), pan: pn }; }
 }
 function puff(x: number, y: number, n: number): void {
   if (G.parts.length > 60) return;
@@ -1703,17 +2013,17 @@ const SAVE_KEY = "after-rain-save-v1";
 let MEM_SAVE: string | null = null;
 type SaveData = { loc: LocId; px: number; flags: Record<string, number>; items: string[]; credits: number; obj: number; m2: boolean; notes: string[]; music: number; sfx: number; textSpeed: number; amb?: number; gfx?: number };
 const SET_KEY = "after-rain-settings-v1";
-function saveSettings(): void { try { localStorage.setItem(SET_KEY, JSON.stringify({ music: G.music, sfx: G.sfx, amb: G.amb, textSpeed: G.textSpeed, gfx: G.gfx })); } catch { /* storage blocked */ } }
+function saveSettings(): void { try { localStorage.setItem(SET_KEY, JSON.stringify({ music: G.music, sfx: G.sfx, amb: G.amb, adv: G.adv, textSpeed: G.textSpeed, gfx: G.gfx })); } catch { /* storage blocked */ } }
 function loadSettings(): void {
   try {
     const s = localStorage.getItem(SET_KEY); if (!s) return;
     const d = JSON.parse(s) as Record<string, unknown>;
-    for (const k of ["music", "sfx", "amb", "textSpeed", "gfx"] as const) { const v = d[k]; if (typeof v === "number" && isFinite(v)) G[k] = v; }
+    for (const k of ["music", "sfx", "amb", "adv", "textSpeed", "gfx"] as const) { const v = d[k]; if (typeof v === "number" && isFinite(v)) G[k] = v; }
   } catch { /* storage blocked */ }
 }
 loadSettings();
 function saveGame(quiet?: boolean): void {
-  const d: SaveData = { loc: G.loc, px: G.px, flags: G.flags, items: G.items, credits: G.credits, obj: G.obj, m2: G.m2, notes: G.notes, music: G.music, sfx: G.sfx, textSpeed: G.textSpeed, amb: G.amb, gfx: G.gfx };
+  const rd = G.ride; const d: SaveData = { loc: rd ? (rd.dir > 0 ? "district" : "pier") : G.loc, px: rd ? (rd.dir > 0 ? 1336 : 82) : G.px, flags: G.flags, items: G.items, credits: G.credits, obj: G.obj, m2: G.m2, notes: G.notes, music: G.music, sfx: G.sfx, textSpeed: G.textSpeed, amb: G.amb, gfx: G.gfx };
   const s = JSON.stringify(d); MEM_SAVE = s;
   try { localStorage.setItem(SAVE_KEY, s); G.saveNote = quiet ? "Checkpoint saved." : "Game saved."; } catch { G.saveNote = "Saved for this session only (this view blocks storage)."; }
   if (!quiet) blip();
@@ -1724,7 +2034,8 @@ function loadGame(): void {
   const s = readSave(); if (!s) return;
   try {
     const d = JSON.parse(s) as Partial<SaveData>;
-    const keep = { music: G.music, sfx: G.sfx, amb: G.amb, gfx: G.gfx, textSpeed: G.textSpeed };
+    const keep = { music: G.music, sfx: G.sfx, amb: G.amb, adv: G.adv, gfx: G.gfx, textSpeed: G.textSpeed };
+    ferryHum(false);
     Object.assign(G, newGame(), keep);
     G.flags = d.flags && typeof d.flags === "object" ? { ...d.flags } : {};
     G.items = Array.isArray(d.items) ? d.items.filter((id: string) => !!ITEMS[id]) : [];
@@ -1789,7 +2100,7 @@ function objInfo(): ObjI {
   if (o === 4) return { text, hint: "Use the memory reader by the pillar, or BAG > chip > Investigate.", loc: "market", x: 636 };
   if (o === 5) {
     if (!f.knowLab) return { text, hint: "Ask NOVA in the memory market what the chip showed you.", loc: "market", x: 770 };
-    if (G.loc !== "pier") return { text, hint: "Tidewater Pier: through the seawall gate at the east end of Kessler Street.", loc: "district", x: 1340 };
+    if (G.loc !== "pier") return { text, hint: "Tidewater Pier: take the hover-ferry at the seawall gate, east end of Kessler Street.", loc: "district", x: 1340 };
     return { text, hint: "The pump house is at the far end of the pier. The Forgotten live along the way.", loc: "pier", x: 1000 };
   }
   if (o === 6) return { text, hint: f.hatch ? (f.codeOk ? "The hatch is open. Climb down." : "Hatch keypad: lab number, then unit number." + (has("manifest") ? "" : " Check the crates.")) : "The front door is welded. Ask the Forgotten, or follow the blue coolant drips.", loc: "pier", x: f.hatch ? 1072 : 614 };
@@ -1973,6 +2284,7 @@ function finishM2(): void {
   chime(); saveGame(true); G.rev++;
 }
 function startM2(): void {
+  rideAbort();
   const keepItems = G.items.filter((id: string) => !M2ITEMS.includes(id));
   for (const k of M2FLAGS) delete G.flags[k];
   G.items = keepItems; if (!has("chip")) G.items.push("chip");
@@ -2091,9 +2403,9 @@ const SPOTS: Spot[] = [
   { id: "stairs", loc: "district", x: 1250, y: 120, kind: "ENTER", label: "Stairs down", show: () => !!G.flags.market, use: () => go("market", 52) },
   { id: "up", loc: "market", x: 34, y: 104, kind: "ENTER", label: "Stairs up", show: () => true, use: () => go("district", 1236) },
   { id: "cr2", loc: "market", x: 262, y: 146, kind: "COLLECT", label: "Credit chip", show: () => !G.flags.cr2, use: () => { G.flags.cr2 = 1; G.credits += 10; toast("+10 credits"); coin(); } },
-  { id: "pgate", loc: "district", x: 1340, y: 112, kind: "ENTER", label: "Seawall gate", show: () => G.obj >= M1N && !!G.flags.knowLab, use: () => go("pier", 40) },
+  { id: "pgate", loc: "district", x: 1340, y: 112, kind: "ENTER", label: "Hover-ferry", show: () => ferryOpen(), use: () => startRide(1) },
   { id: "pgate0", loc: "district", x: 1340, y: 112, kind: "EXAMINE", label: "Seawall gate", show: () => !(G.obj >= M1N && G.flags.knowLab), use: () => say([E("The seawall gate. Tidewater Pier is on the other side. Nobody goes out there anymore. Nobody I know, anyway.")], null, false) },
-  { id: "pback", loc: "pier", x: 22, y: 112, kind: "ENTER", label: "Kessler Street", show: () => true, use: () => go("district", 1328) },
+  { id: "pback", loc: "pier", x: 24, y: 112, kind: "ENTER", label: "Ferry to Kessler St", show: () => true, use: () => startRide(-1) },
   { id: "tally", loc: "pier", x: 206, y: 120, kind: "EXAMINE", label: "Tally board", show: () => true, use: () => say([E(G.flags.solTally ? "Two thousand one hundred and ninety marks. Six years. The same six years I've been counting." : "Hundreds of chalk marks in neat bundles of five. Somebody has been counting days for a long time.")], () => { G.flags.tally = 1; }, false) },
   { id: "coolant", loc: "pier", x: 760, y: 150, kind: "EXAMINE", label: "Blue drips", show: () => !G.flags.coolant, use: () => say([E("Blue drops on the boards. Synthetic coolant, still bright. Somebody bled their way along this pier."), E("The trail runs under the planks, toward the pump house.")], () => { G.flags.coolant = 1; G.flags.hatch = 1; G.rev++; }, false) },
   { id: "crates", loc: "pier", x: 872, y: 140, kind: "EXAMINE", label: "AURELION crates", show: () => !has("manifest"), use: () => say([E("AURELION crates, fresh paint, old rain. The manifest is stencilled on the side."), { who: "", text: "M BATCH · 6 UNITS · SERVICE ACCESS = LAB NO. + UNIT NO." }], () => give("manifest"), false) },
@@ -2120,6 +2432,7 @@ function targets(): Target[] {
   return out;
 }
 function nearest(): Target | null {
+  if (G.ride) return null;
   let best: Target | null = null; let bd = 18;
   for (const t of targets()) { const d = Math.abs(t.x - G.px) + (t.walker ? 4 : 0); if (d < bd) { bd = d; best = t; } }
   return best;
@@ -2157,7 +2470,8 @@ function newGameStart(): void {
   Object.assign(G, newGame(), keep);
   G.scene = "cut"; G.sceneT = 0; setMood("menu"); siren(); G.rev++;
 }
-function toMenu(): void { G.scene = "menu"; G.panel = "none"; G.dlg = null; G.fade = 1; setMood("menu"); G.rev++; }
+function rideAbort(): void { const r = G.ride; if (!r) return; G.ride = null; ferryHum(false); if (r.dir > 0) { G.loc = "district"; G.px = 1336; G.cam = 1400 - W; } else { G.loc = "pier"; G.px = 82; G.cam = 0; } G.py = FEET; G.vy = 0; }
+function toMenu(): void { rideAbort(); G.scene = "menu"; G.panel = "none"; G.dlg = null; G.fade = 1; setMood("menu"); G.rev++; }
 
 // ---------- update ----------
 const SPEEDS = [22, 45, 110];
@@ -2256,7 +2570,7 @@ function update(dt: number): void {
   g.zoom += ((g.dlg && g.dlg.push ? 1.14 : g.beat !== -1 && g.px > 200 && g.loc === "apt" ? 1.12 : 1) - g.zoom) * Math.min(1, dt * (g.beat !== -1 ? 1.2 : 2.5));
   const LW = LOCW[g.loc];
   g.lookX += (g.facing * 16 - g.lookX) * Math.min(1, dt * 1.6);
-  g.cam += (clamp(g.px + g.lookX - W / 2, 0, LW - W) - g.cam) * Math.min(1, dt * 4.5);
+  if (!g.ride) g.cam += (clamp(g.px + g.lookX - W / 2, 0, LW - W) - g.cam) * Math.min(1, dt * 4.5);
   if (g.loc === "district" || g.loc === "pier") {
     if (g.fly) {
       const f = g.fly; f.x += f.dir * f.speed * dt;
@@ -2268,6 +2582,7 @@ function update(dt: number): void {
   g.sndT -= dt;
   if (g.sndT <= 0 && SND) { g.sndT = 0.25; let sv = 0; for (const vx of g.loc === "district" ? [332, 846] : g.loc === "pier" ? [480, 940] : g.loc === "market" ? [600] : []) sv = Math.max(sv, 1 - Math.abs(g.px - vx) / 90); SND.steam.gain.setTargetAtTime(Math.max(0, sv) * 0.14, SND.ctx.currentTime, 0.2); pedAudio(); adTick(0.25); pierAmb(); }
   if (g.scene === "end") { g.actQ = false; g.jumpQ = false; return; }
+  if (g.ride) { rideTick(dt); if (g.dlg) dlgTick(dt); g.actQ = false; g.jumpQ = false; return; }
   const talking = !!g.dlg;
   if (talking) dlgTick(dt);
   const busy = talking || g.fadeTo > 0;
@@ -2389,11 +2704,11 @@ function bakeCanopy(c: Ctx, seed: number): void {
     for (let i = 0; i < 4; i++) { const x0 = cx - 40 + i * 30; for (let y = 0; y < 40; y++) R(c, x0 + Math.round(Math.sin(y * 0.2 + i) * 3) + Math.round(y * (i - 1.5) * 0.3), y, 2, 1, "#050a07"); }
   }
 }
-function waterPlane(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement, cam: number, t: number): void {
+function waterPlane(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement, cam: number, t: number, gap0 = 1e9, gap1 = -1e9): void {
   const wl = FEET - YO; const top = wl + 5; const depth = H - top;
   rc.setTransform(1, 0, 0, 1, 0, 0); rc.globalAlpha = 1; rc.globalCompositeOperation = "copy"; rc.drawImage(buf, 0, 0); rc.globalCompositeOperation = "source-over";
   R(b, 0, wl, W, top - wl, "#0b1216"); R(b, 0, wl, W, 1, "#3a5058"); R(b, 0, top - 1, W, 1, "#05080a");
-  for (let wx = Math.floor(cam / 24) * 24; wx < cam + W + 24; wx += 24) { const sx = wx - cam; R(b, sx, wl + 2, 2, 1, "#ffcf7a"); glow(b, sx + 1, wl + 2, 6, "255,190,110", 0.45); }
+  for (let wx = Math.floor(cam / 24) * 24; wx < cam + W + 24; wx += 24) { const sx = wx - cam; if (sx > gap0 && sx < gap1) continue; R(b, sx, wl + 2, 2, 1, "#ffcf7a"); glow(b, sx + 1, wl + 2, 6, "255,190,110", 0.45); }
   R(b, 0, top, W, depth, "#03090c");
   for (let y = top; y < H; y++) {
     const d = y - top; const src = wl - 1 - Math.floor(d * 0.85); if (src < 1) break;
@@ -2408,7 +2723,7 @@ function waterPlane(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasEle
   for (let i = 0; i < 26; i++) { const x = ((h1(i * 3.3) * (W + 40) - cam * 1.1 + t * 3 * ((i % 3) - 1)) % (W + 40) + W + 40) % (W + 40) - 20; const y = top + 2 + h1(i * 7.7) * (depth - 4); b.globalAlpha = 0.18 + 0.14 * Math.sin(t * 2 + i); R(b, x, y, 3 + (i % 4) * 2, 1, "#9fd8d0"); }
   for (let i = 0; i < 12; i++) { const x = ((h1(i * 5.1) * 1600 - cam * 1.05 + t * 1.5) % (W + 60) + W + 60) % (W + 60) - 30; const y = top + 3 + Math.floor(h1(i * 1.9) * 10); b.globalAlpha = 0.9; R(b, x, y, 5 + (i % 3) * 2, 1, i % 4 === 0 ? "#4a2a40" : "#123222"); R(b, x + 1, y - 1, 3, 1, "#0a1a12"); }
   b.globalAlpha = 1;
-  for (let wx = Math.floor(cam / 140) * 140 + 40; wx < cam + W + 20; wx += 140) { const sx = wx - cam; R(b, sx, top, 5, depth, "#04080a"); R(b, sx, top, 1, depth, "#1a2a2e"); }
+  for (let wx = Math.floor(cam / 140) * 140 + 40; wx < cam + W + 20; wx += 140) { const sx = wx - cam; if (sx > gap0 - 5 && sx < gap1) continue; R(b, sx, top, 5, depth, "#04080a"); R(b, sx, top, 1, depth, "#1a2a2e"); }
 }
 function city(b: Ctx, cc: Caches, farX: number, midX: number, t: number, camC: number, open = false): void {
   const sky = b.createLinearGradient(0, 0, 0, FEET);
@@ -2714,7 +3029,8 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
   const cam = Math.round(g.cam);
   const seated = g.scene === "cut";
   YO = (g.loc === "district" || g.loc === "pier") && (g.scene === "play" || g.scene === "end") ? 44 : 0;
-  if (g.loc === "apt") {
+  if (g.ride) renderRide(b, rc, buf, rbuf, cc);
+  else if (g.loc === "apt") {
     drawApt(b, cc, cam, seated);
     drawNpcs(b, cam);
     if (!seated) drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
@@ -2743,10 +3059,11 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     drawParts(b, cam);
     b.setTransform(SC, 0, 0, SC, 0, 0);
     waterPlane(b, rc, buf, rbuf, cam, t);
+    if (ferryOpen()) { b.setTransform(SC, 0, 0, SC, 0, -YO * SC); drawFerry(b, RFD - cam, t, 0, 1, 0); drawFerry(b, RFD - cam, t, 0, 1, 1); b.setTransform(SC, 0, 0, SC, 0, 0); }
     rain(b, 1);
   } else if (g.loc === "pier") {
     b.setTransform(SC, 0, 0, SC, 0, -YO * SC);
-    city(b, cc, cam * 0.12, cam * 0.4, t, cam, true);
+    city(b, cc, cam * 0.12 + PFX, cam * 0.4 + PMX, t, cam, true);
     pierBack(b, cam, t);
     b.drawImage(cc.pier, cam, 0, W, H, 0, 0, W, H);
     drawPierDyn(b, cam);
@@ -2762,6 +3079,7 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     drawParts(b, cam);
     b.setTransform(SC, 0, 0, SC, 0, 0);
     waterPlane(b, rc, buf, rbuf, cam, t);
+    b.setTransform(SC, 0, 0, SC, 0, -YO * SC); drawFerry(b, RFP - ROFF - cam, t, 0, 1, 0); drawFerry(b, RFP - ROFF - cam, t, 0, 1, 1); b.setTransform(SC, 0, 0, SC, 0, 0);
     rain(b, 0.85);
   } else if (g.loc === "lab") {
     b.drawImage(cc.lab, cam, 0, W, H, 0, 0, W, H);
@@ -3312,12 +3630,12 @@ export default function AfterRain() {
   const rowS: CSSProperties = { padding: "9px 0", borderTop: `1px solid ${theme.border.subtle}`, fontSize: 15, lineHeight: "21px" };
   const close = (): void => { blip(); g.panel = "none"; bump(); };
   const back = (): void => { blip(); g.panel = g.scene === "menu" ? "none" : "pause"; bump(); };
-  const volRow = (label: string, key: "music" | "sfx" | "amb") => (
+  const volRow = (label: string, key: "music" | "sfx" | "amb" | "adv") => (
     <div style={{ ...rowS, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <div style={{ flex: "1 1 120px" }}>{label}</div>
-      <button style={{ ...small, minWidth: 52, fontSize: 20 }} onClick={() => { g[key] = Math.max(0, Math.round((g[key] - 0.1) * 10) / 10); applyVol(); saveSettings(); blip(); bump(); }}>−</button>
+      <button style={{ ...small, minWidth: 52, fontSize: 20 }} onClick={() => { g[key] = Math.max(0, Math.round((g[key] - 0.1) * 10) / 10); applyVol(); saveSettings(); if (key === "adv") adPreview(); else blip(); bump(); }}>−</button>
       <div style={{ width: 90, height: 10, borderRadius: 5, background: theme.fill.secondary, overflow: "hidden" }}><div style={{ width: `${g[key] * 100}%`, height: "100%", background: theme.fill.accent }} /></div>
-      <button style={{ ...small, minWidth: 52, fontSize: 20 }} onClick={() => { g[key] = Math.min(1, Math.round((g[key] + 0.1) * 10) / 10); applyVol(); saveSettings(); blip(); bump(); }}>+</button>
+      <button style={{ ...small, minWidth: 52, fontSize: 20 }} onClick={() => { g[key] = Math.min(1, Math.round((g[key] + 0.1) * 10) / 10); applyVol(); saveSettings(); if (key === "adv") adPreview(); else blip(); bump(); }}>+</button>
     </div>
   );
   const evid = g.items.filter((id: string) => ITEMS[id]?.ev);
@@ -3358,6 +3676,7 @@ export default function AfterRain() {
             {volRow("Music volume", "music")}
             {volRow("SFX volume", "sfx")}
             {volRow("Ambience (rain, city)", "amb")}
+            {volRow("Holo-ad volume", "adv")}
             <div style={rowS}>
               <div style={{ marginBottom: 6 }}>Graphics</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
