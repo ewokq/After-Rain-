@@ -285,7 +285,14 @@ const FERRY_TALK: Line[] = [
   { who: "ELIAS", text: "Every sign out here is still selling. Nobody left to buy." },
   { who: "NOVA", text: "Pump house is at the far end of the pier. Don't make me regret this." },
 ];
-function ferryOpen(): boolean { return G.obj >= M1N && !!G.flags.knowLab; }
+function ferryOpen(): boolean { return G.obj >= M1N; }
+function boardFerry(): void {
+  if (G.flags.knowLab) { startRide(1); return; }
+  say([E("Nova said to find Lab 7 first. She'll know where AURELION hides it."), { who: "", text: "Ask NOVA in the memory market first, or take the hover-ferry now?", choices: [
+    { label: "Ask Nova first", next: () => [E("Back down the green-grate stairs, then. Her stall's under the red lantern.")] },
+    { label: "Take the ferry now", next: () => [E("The chip showed me water and a pump house. Tidewater Pier. I'll start there."), { who: "", text: "[Elias steps onto the hover-ferry.]", act: () => { G.flags.knowLab = 1; G.flags.ferryGo = 1; G.notes.push("Took the hover-ferry to Tidewater Pier without Nova's directions."); } }] },
+  ] }], () => { if (G.flags.ferryGo) { delete G.flags.ferryGo; startRide(1); } }, false);
+}
 function blitH(c: Ctx, img: HTMLCanvasElement, sx: number, dy: number, h: number): void {
   const x0 = Math.max(0, sx); const x1 = Math.min(img.width, sx + W); if (x1 - x0 < 1) return;
   c.drawImage(img, x0, 0, x1 - x0, h, x0 - sx, dy, x1 - x0, h);
@@ -1387,8 +1394,8 @@ type Line = { who: string; text: string; choices?: Choice[]; act?: () => void };
 type Choice = { label: string; next: () => Line[] };
 type Dlg = { lines: Line[]; i: number; chars: number; waiting: boolean; done: (() => void) | null; push: boolean; acted: number };
 type Npc = { id: string; name: string; loc: LocId; x: number; y: number; x0: number; x1: number; dir: number; speed: number; wait: number; look: Look; met: boolean; bubble: string; bubbleT: number; react: string[]; idle: string; stops: number[]; barks: string[]; barkCd: number; peek: number };
-type Spot = { id: string; loc: LocId; x: number; y: number; kind: Kind; label: string; show: () => boolean; use: () => void };
-type Target = { id: string; x: number; y: number; kind: Kind; label: string; use: () => void; walker?: boolean };
+type Spot = { id: string; loc: LocId; x: number; y: number; kind: Kind; label: string; show: () => boolean; use: () => void; w?: number };
+type Target = { id: string; x: number; y: number; kind: Kind; label: string; use: () => void; walker?: boolean; w?: number };
 type Panel = "none" | "pause" | "bag" | "journal" | "settings" | "credits";
 type Scene = "menu" | "cut" | "play" | "glitch" | "vis" | "end";
 type Drop = { x: number; y: number; v: number; l: number; g: number };
@@ -2047,6 +2054,8 @@ function loadGame(): void {
     G.flags.called = 1; G.flags.rang = 1;
     G.scene = "play"; G.loc = loc; G.px = clamp(typeof d.px === "number" ? d.px : 104, 8, LOCW[loc] - 8); G.cam = clamp(G.px - W / 2, 0, LOCW[loc] - W); G.fade = 1;
     if (G.obj === 8 && !G.flags.valeIn) G.flags.valeIn = 1;
+    if (G.obj >= M1N && !G.flags.knowLab && (G.obj > M1N || loc === "pier" || loc === "lab" || !!G.flags.kaneRang || !!G.flags.ferry1)) G.flags.knowLab = 1;
+    delete G.flags.ferryGo;
     syncObj(true); G.saveNote = "Game loaded."; setMood(loc); applyVol(); G.rev++;
   } catch { G.saveNote = "That save could not be read."; G.rev++; }
 }
@@ -2109,6 +2118,15 @@ function objInfo(): ObjI {
   if (o === 8) return { text, hint: "Talk to Dr. Vale.", loc: "lab", x: 470 };
   if (o >= OBJ.length) return { text: "Mission 002 complete", hint: "Mission 003: A CITY WITHOUT SUNLIGHT is next. Replay chapters from the JOURNAL.", loc: "", x: 0 };
   return { text: "Explore freely", hint: "Mission 002 is unlocked in your JOURNAL.", loc: "", x: 0 };
+}
+function objMarker(): { x: number; label: string } | null {
+  const g = G; if (g.scene !== "play" || g.dlg || g.ride || g.obj < M1N) return null;
+  const tx = objTargetX(); if (tx === null) return null;
+  if (g.loc === "district" && tx === 1340) return { x: 1340, label: "HOVER-FERRY" };
+  if (g.loc === "district" && tx === 1250) return { x: 1250, label: "MARKET STAIRS" };
+  if (g.loc === "market" && tx === 34) return { x: 34, label: "EXIT TO KESSLER ST" };
+  if (g.loc === "pier" && tx === 22) return { x: 22, label: "FERRY" };
+  return null;
 }
 function objTargetX(): number | null {
   const o = objInfo(); if (!o.loc) return null;
@@ -2403,9 +2421,9 @@ const SPOTS: Spot[] = [
   { id: "stairs", loc: "district", x: 1250, y: 120, kind: "ENTER", label: "Stairs down", show: () => !!G.flags.market, use: () => go("market", 52) },
   { id: "up", loc: "market", x: 34, y: 104, kind: "ENTER", label: "Stairs up", show: () => true, use: () => go("district", 1236) },
   { id: "cr2", loc: "market", x: 262, y: 146, kind: "COLLECT", label: "Credit chip", show: () => !G.flags.cr2, use: () => { G.flags.cr2 = 1; G.credits += 10; toast("+10 credits"); coin(); } },
-  { id: "pgate", loc: "district", x: 1340, y: 112, kind: "ENTER", label: "Hover-ferry", show: () => ferryOpen(), use: () => startRide(1) },
-  { id: "pgate0", loc: "district", x: 1340, y: 112, kind: "EXAMINE", label: "Seawall gate", show: () => !(G.obj >= M1N && G.flags.knowLab), use: () => say([E("The seawall gate. Tidewater Pier is on the other side. Nobody goes out there anymore. Nobody I know, anyway.")], null, false) },
-  { id: "pback", loc: "pier", x: 24, y: 112, kind: "ENTER", label: "Ferry to Kessler St", show: () => true, use: () => startRide(-1) },
+  { id: "pgate", loc: "district", x: 1340, y: 112, kind: "ENTER", label: "Hover-ferry", show: () => ferryOpen(), use: () => boardFerry(), w: 42 },
+  { id: "pgate0", loc: "district", x: 1340, y: 112, kind: "EXAMINE", label: "Seawall gate", show: () => !ferryOpen(), use: () => say([E("The seawall gate. Tidewater Pier is on the other side. Nobody goes out there anymore. Nobody I know, anyway.")], null, false) },
+  { id: "pback", loc: "pier", x: 24, y: 112, kind: "ENTER", label: "Ferry to Kessler St", show: () => true, use: () => startRide(-1), w: 30 },
   { id: "tally", loc: "pier", x: 206, y: 120, kind: "EXAMINE", label: "Tally board", show: () => true, use: () => say([E(G.flags.solTally ? "Two thousand one hundred and ninety marks. Six years. The same six years I've been counting." : "Hundreds of chalk marks in neat bundles of five. Somebody has been counting days for a long time.")], () => { G.flags.tally = 1; }, false) },
   { id: "coolant", loc: "pier", x: 760, y: 150, kind: "EXAMINE", label: "Blue drips", show: () => !G.flags.coolant, use: () => say([E("Blue drops on the boards. Synthetic coolant, still bright. Somebody bled their way along this pier."), E("The trail runs under the planks, toward the pump house.")], () => { G.flags.coolant = 1; G.flags.hatch = 1; G.rev++; }, false) },
   { id: "crates", loc: "pier", x: 872, y: 140, kind: "EXAMINE", label: "AURELION crates", show: () => !has("manifest"), use: () => say([E("AURELION crates, fresh paint, old rain. The manifest is stencilled on the side."), { who: "", text: "M BATCH · 6 UNITS · SERVICE ACCESS = LAB NO. + UNIT NO." }], () => give("manifest"), false) },
@@ -2427,14 +2445,14 @@ const PLATS: Record<LocId, { x0: number; x1: number; y: number }[]> = {
 
 function targets(): Target[] {
   const out: Target[] = [];
-  for (const s of SPOTS) if (s.loc === G.loc && s.show()) out.push({ id: s.id, x: s.x, y: s.y, kind: s.kind, label: s.label, use: s.use });
+  for (const s of SPOTS) if (s.loc === G.loc && s.show()) out.push({ id: s.id, x: s.x, y: s.y, kind: s.kind, label: s.label, use: s.use, w: s.w });
   for (const n of G.npcs) if (onNpc(n)) out.push({ id: n.id, x: n.x, y: n.y - n.look.h - 14, kind: "SPEAK", label: n.name, use: () => talkNpc(n), walker: n.speed > 0 });
   return out;
 }
 function nearest(): Target | null {
   if (G.ride) return null;
   let best: Target | null = null; let bd = 18;
-  for (const t of targets()) { const d = Math.abs(t.x - G.px) + (t.walker ? 4 : 0); if (d < bd) { bd = d; best = t; } }
+  for (const t of targets()) { const d = Math.max(0, Math.abs(t.x - G.px) - (t.w ?? 0)) + (t.walker ? 4 : 0); if (d < bd) { bd = d; best = t; } }
   return best;
 }
 function talkNpc(n: Npc): void {
@@ -3357,7 +3375,7 @@ function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, in
         const best = fit ?? cands[0] ?? [cx - w / 2, bottom - h];
         const out = [best[0] ?? 0, best[1] ?? 0, w, h]; placed.push(out); return out;
       };
-      const n = nearest();
+      const om = objMarker(); const n = nearest();
       if (n && g.fadeTo === 0) {
         const lab = n.id === "window" ? "Look · Window" : n.kind === "ACCESS" ? (n.label ? "Access " + n.label.toLowerCase() : "Access terminal") : (KL[n.kind] + (n.label ? " · " + n.label : ""));
         c.font = `bold ${fsS}px ${mono}`; const lw2 = c.measureText(lab).width + fsS * 1.2; const lh = fsS * 1.8;
@@ -3365,6 +3383,11 @@ function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, in
         const wy = n.kind === "SPEAK" ? headTop(n.x, n.y + 10) : Math.min(n.y, headTop(n.x, n.y));
         const r = place(toX(n.x), toY(wy) - 4 * dpr + bob, lw2, lh, true) ?? [0, 0];
         tag(c, lab, (r[0] ?? 0) + lw2 / 2, r[1] ?? 0, fsS, "#ffb04a", mono);
+      }
+      if (om && g.fadeTo === 0 && !(n && Math.abs(n.x - om.x) < 50)) {
+        c.font = `bold ${fsS}px ${mono}`; const bob = Math.sin(g.t * 4) * 3 * dpr; const sx = toX(om.x);
+        if (sx > fsS * 2 && sx < cw - fsS * 2) { const lb = "▼ " + om.label; const lw3 = c.measureText(lb).width + fsS * 1.2; const r = place(sx, toY(96) + bob + fsS * 1.8, lw3, fsS * 1.8, false); if (r) tag(c, lb, (r[0] ?? 0) + lw3 / 2, r[1] ?? 0, fsS, "#5ff0d8", mono); }
+        else { const right = sx >= cw - fsS * 2; const lb = right ? om.label + " ▶" : "◀ " + om.label; const lw3 = c.measureText(lb).width + fsS * 1.2; tag(c, lb, right ? cw - lw3 / 2 - 6 * dpr + bob : lw3 / 2 + 6 * dpr - bob, ch * 0.42, fsS, "#5ff0d8", mono); }
       }
       const talkers = g.npcs.filter((o: Npc) => o.loc === g.loc && o.bubbleT > 0 && !!o.bubble).sort((a2: Npc, b2: Npc) => Math.abs(a2.x - g.px) - Math.abs(b2.x - g.px));
       for (const np of talkers) {
