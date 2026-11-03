@@ -9,8 +9,10 @@ let SC = 2;
 let PG = 0.5;
 let SIL: HTMLCanvasElement | null = null;
 const BLOOM = { n: 2, a0: 0.7, a1: 0.55 };
-type LocId = "apt" | "district" | "market";
-const LOCW: Record<LocId, number> = { apt: 360, district: 1400, market: 900 };
+type LocId = "apt" | "district" | "market" | "pier" | "lab";
+const LOCW: Record<LocId, number> = { apt: 360, district: 1400, market: 900, pier: 1100, lab: 520 };
+// holo-ads only make sound out here; the apartment and Lab 7 are indoors
+function outside(l: LocId): boolean { return l === "district" || l === "market" || l === "pier"; }
 const FW = Math.ceil(340 + 1400 * 0.15);
 const MW = Math.ceil(340 + 1400 * 0.45);
 const KW = Math.ceil(340 + 900 * 0.6);
@@ -290,14 +292,14 @@ function drawFg(f: Ctx, cc: Caches): void {
     if (any) { f.save(); f.imageSmoothingEnabled = true; f.globalAlpha = 0.82; f.drawImage(SIL, 0, 0, 100, 45, 0, 0, 400, 180); f.restore(); }
   }
   if (!g.gfx) return;
-  const bk = L === "district" ? cc.bokD : L === "market" ? cc.bokM : cc.bokA; const bh = bk.height;
+  const bk = L === "district" ? cc.bokD : L === "market" ? cc.bokM : L === "pier" ? cc.bokP : cc.bokA; const bh = bk.height;
   const gy = H - Math.round(bh * 0.6);
   const gr = f.createLinearGradient(0, gy, 0, H); gr.addColorStop(0, "rgba(2,6,8,0)"); gr.addColorStop(1, "rgba(2,6,8,0.6)");
   f.fillStyle = gr; f.fillRect(0, gy, W, H - gy);
-  f.globalCompositeOperation = "lighter"; f.globalAlpha = L === "apt" ? 0.4 : 0.75 + Math.sin(g.t * 0.7) * 0.08;
+  f.globalCompositeOperation = "lighter"; f.globalAlpha = L === "apt" || L === "lab" ? 0.4 : 0.75 + Math.sin(g.t * 0.7) * 0.08;
   f.drawImage(bk, Math.round(cam * 1.3), 0, W, bh, 0, H - bh, W, bh);
   f.globalAlpha = 1; f.globalCompositeOperation = "source-over";
-  if (L === "district") {
+  if (L === "district" || L === "pier") {
     f.fillStyle = "rgba(210,240,235,0.2)"; const span = W + 60;
     for (let i = 0; i < 22; i++) { const x = ((((h1(i * 4.1) * span - cam * 1.5 - g.t * 40) % span) + span) % span) - 30; const y = ((h1(i * 2.7) * (H + 20) + g.t * (300 + h1(i) * 90)) % (H + 20)) - 10; f.fillRect(Math.round(x), Math.round(y), 1, 10); }
   }
@@ -485,6 +487,296 @@ function bakeMarketBack(c: Ctx): void {
   c.save(); c.globalCompositeOperation = "source-atop";
   const g = c.createLinearGradient(0, 20, 0, FEET); g.addColorStop(0, "rgba(40,110,100,0.1)"); g.addColorStop(1, "rgba(60,150,130,0.35)");
   c.fillStyle = g; c.fillRect(0, 0, KW, H); c.restore();
+}
+
+// ---------- Mission 002: Tidewater Pier (exterior) and Lab 7 (interior) ----------
+const PLAMPS = [130, 450, 780, 980];
+const BOK_P: BL[] = [[150, "255,150,60"], [360, "255,176,74"], [586, "255,111,154"], [612, "255,240,220"], [863, "255,176,74"], [1010, "95,240,216"], [1072, "93,255,154"], [130, "255,190,110"], [450, "255,190,110"], [780, "255,190,110"], [980, "255,190,110"]];
+// lit container windows on the pier (x, y, seed) for the moving silhouettes
+const PWINS: number[][] = [[478, 120, 0.11], [492, 120, 0.37], [520, 120, 0.21], [572, 106, 0.43], [588, 106, 0.29], [618, 106, 0.07], [636, 124, 0.33], [512, 80, 0.47], [540, 80, 0.19]];
+function bakePier(c: Ctx): void {
+  // seawall + open gate
+  R(c, 0, 62, 24, 98, "#1a2426"); R(c, 0, 62, 24, 2, "#2e3c40"); for (let y = 70; y < 160; y += 9) R(c, 0, y, 24, 1, "#141c1e");
+  ptext(c, "SEA", 4, 74, "#4a6a6a", 1); ptext(c, "WALL", 3, 82, "#4a6a6a", 1);
+  for (let x = 24; x < 30; x++) for (let y = 110; y < 158; y += 2) R(c, x + (y % 4 === 0 ? 1 : 0), y, 1, 1, "#3a4a4e");
+  R(c, 24, 108, 2, 52, "#2a3436");
+  R(c, 34, 92, 52, 12, "#2a2018"); R(c, 34, 92, 52, 1, "#5a4630"); ptext(c, "TIDEWATER", 37, 95, "#d8c8a0", 1); R(c, 44, 104, 1, 56, "#1a140e"); R(c, 76, 104, 1, 56, "#1a140e");
+  // boardwalk deck + rail behind the walkway
+  R(c, 0, FEET - 3, 1100, 3, "#3a2a1c"); R(c, 0, FEET - 3, 1100, 1, "#6a5236");
+  R(c, 30, FEET - 15, 1070, 1, "#4a4038"); R(c, 30, FEET - 9, 1070, 1, "#2a241e");
+  for (let x = 30; x < 1100; x += 14) R(c, x, FEET - 15, 1, 12, "#2a241e");
+  // Sol's camp: tarp lean-to, crates, tally board
+  for (let x = 96; x < 226; x++) { const y = Math.round(104 + (x - 96) * 0.08); R(c, x, y, 1, 3, (Math.floor(x / 9) % 3 === 0) ? "#3a5a6a" : (Math.floor(x / 9) % 3 === 1) ? "#2a4a5a" : "#5a4a3a"); }
+  R(c, 96, 104, 2, 56, "#2a1e14"); R(c, 224, 114, 2, 46, "#2a1e14");
+  R(c, 104, 140, 16, 20, "#3a2a1a"); R(c, 104, 140, 16, 1, "#6a5030"); R(c, 120, 146, 12, 14, "#2e2416");
+  R(c, 144, 144, 12, 16, "#2a2a2a"); R(c, 144, 144, 12, 2, "#4a4a44"); R(c, 144, 150, 12, 1, "#1a1a1a");
+  R(c, 196, 118, 22, 16, "#3a3022"); R(c, 196, 118, 22, 1, "#5a4a32");
+  for (let k = 0; k < 14; k++) R(c, 198 + (k % 7) * 3, 121 + Math.floor(k / 7) * 6, 1, 4, "#d8d0b0");
+  for (let k = 0; k < 2; k++) R(c, 197 + k * 10, 123 + k * 6, 9, 1, "#d8d0b0");
+  // Juno's grill
+  stall(c, 310, 110, "#8a2a1a", "#5a1a10", 61);
+  R(c, 330, 132, 70, 4, "#2a2a2a"); R(c, 330, 132, 70, 1, "#5a5a5a");
+  // container shanty of the Forgotten
+  const cont = (x: number, y: number, w: number, h: number, col: string): void => { R(c, x, y, w, h, col); R(c, x, y, w, 1, mixHex(col, "#ffffff", 0.2)); for (let k = 2; k < w; k += 3) R(c, x + k, y + 1, 1, h - 1, mixHex(col, "#000000", 0.25)); };
+  cont(470, 114, 90, 46, "#2a3a3a"); cont(560, 100, 100, 60, "#4a2a22"); cont(500, 74, 72, 40, "#1e2e3a");
+  for (const w of PWINS) { const x = w[0] ?? 0; const y = w[1] ?? 0; R(c, x, y, 8, 6, (w[2] ?? 0) > 0.3 ? "#f0a64e" : "#ffd27a"); R(c, x, y + 4, 8, 2, "rgba(0,0,0,0.3)"); glowRect(c, x, y, 8, 6, "#f0a64e", 0.35); }
+  for (let x = 568; x < 652; x++) R(c, x, 96 + Math.round(Math.sin(Math.PI * (x - 568) / 84) * 4), 1, 1, "#141414");
+  for (let k = 0; k < 7; k++) R(c, 574 + k * 11, 98 + Math.round(Math.sin(Math.PI * (k * 11 + 6) / 84) * 4), 4, 6, ["#c8c0b0", "#6a2a3a", "#2a4a6a", "#d8b040"][k % 4] ?? "#888");
+  R(c, 600, 140, 30, 20, "#1a1010"); R(c, 602, 142, 26, 18, "#2a1814"); glow(c, 615, 150, 26, "255,170,90", 0.5);
+  plant(c, 476, 112, 14, 71); plant(c, 640, 98, 16, 72);
+  // crane + AURELION crates
+  R(c, 800, 40, 4, 120, "#2a2e30"); for (let y = 44; y < 160; y += 8) { R(c, 800, y, 4, 1, "#3a4044"); R(c, 801, y + 2, 2, 1, "#1a1e20"); }
+  R(c, 790, 40, 150, 3, "#2a2e30"); for (let x = 790; x < 940; x += 6) R(c, x, 41, 1, 2, "#1a1e20");
+  R(c, 900, 43, 1, 50, "#141818"); R(c, 897, 93, 7, 3, "#3a3a3a");
+  R(c, 852, 146, 40, 14, "#c8c0b0"); R(c, 852, 146, 40, 1, "#e8e0d0"); R(c, 852, 152, 40, 1, "#a8a090"); ptext(c, "M-BATCH", 858, 150, "#5a2a1a", 1);
+  R(c, 896, 136, 30, 24, "#a8a090"); R(c, 896, 136, 30, 1, "#d8d0c0"); R(c, 908, 141, 6, 6, "#ffb04a");
+  // pump house (Lab 7 above ground)
+  R(c, 956, 80, 144, 4, "#3a4244"); R(c, 960, 84, 140, 76, "#2a3030");
+  for (let y = 88; y < 160; y += 6) R(c, 960, y, 140, 1, "#242a2a");
+  for (let k = 0; k < 9; k++) R(c, 966 + k * 15, 84, 2, 14 + Math.floor(h1(k * 3.7) * 30), "#4a2e1e");
+  R(c, 964, 88, 62, 9, "#1a2020"); ptext(c, "PUMP STATION 7", 966, 90, "#c8b890", 1);
+  R(c, 1010, 114, 44, 46, "#3a2a20"); for (let y = 116; y < 160; y += 4) R(c, 1010, y, 44, 1, "#2a1e16"); R(c, 1031, 114, 2, 46, "#8a6a40");
+  for (let y = 116; y < 158; y += 5) R(c, 1030, y, 4, 2, "#c89a50");
+  R(c, 1078, 132, 8, 10, "#1a2024"); R(c, 1078, 132, 8, 1, "#3a4448"); R(c, 1080, 142, 2, 16, "#1a2024");
+  R(c, 1062, 157, 22, 3, "#151515"); R(c, 1062, 157, 22, 1, "#3a3a34");
+  for (const lx of PLAMPS) { R(c, lx, 112, 1, 46, "#1c242c"); R(c, lx, 112, 6, 1, "#1c242c"); R(c, lx + 4, 113, 3, 1, "#ffe0a0"); }
+  R(c, 248, 112, 1, 34, "#2a2418"); R(c, 248, 112, 12, 1, "#2a2418");
+}
+function bakeLab(c: Ctx): void {
+  R(c, 0, 0, 520, FEET, "#0a1416");
+  for (let x = 0; x < 520; x += 26) R(c, x, 22, 1, FEET - 22, "#0e1c1e");
+  for (let y = 40; y < FEET; y += 30) R(c, 0, y, 520, 1, "#0c191b");
+  R(c, 0, 0, 520, 20, "#05090a"); R(c, 0, 20, 520, 3, "#1a2a2a"); R(c, 0, 26, 520, 2, "#142224");
+  for (let k = 0; k < 9; k++) { const x = 60 + k * 54; for (let y = 28; y < 40 + (k % 3) * 8; y++) R(c, x + Math.round(Math.sin(y * 0.3 + k) * 1.5), y, 1, 1, "#081012"); }
+  R(c, 18, 0, 26, 20, "#020304"); R(c, 24, 20, 2, 140, "#3a4448"); R(c, 36, 20, 2, 140, "#3a4448"); for (let y = 26; y < 160; y += 8) R(c, 24, y, 14, 1, "#4a5458");
+  ptext(c, "AURELION", 262, 32, "#c8b890", 2); ptext(c, "MEMORY DIVISION LAB 7", 262, 46, "#5a7a78", 1);
+  for (let i = 0; i < 6; i++) {
+    const x = 84 + i * 26;
+    R(c, x - 1, 96, 20, 4, "#2a3436"); R(c, x, 100, 18, 56, "#1a2a2c"); R(c, x + 2, 104, 14, 50, "#0c3234"); R(c, x + 2, 104, 1, 50, "#2a5a5a");
+    R(c, x - 1, 154, 20, 6, "#2a3436"); R(c, x + 4, 156, 10, 1, "#5ff0d8");
+    ptext(c, "M-0" + (i + 1), x + 1, 88, i === 5 ? "#ff8a6a" : "#5a8a88", 1);
+    for (let k = 0; k < 3; k++) R(c, x + 5 + k * 4, 20, 1, 76, "#0a1416");
+  }
+  R(c, 84 + 5 * 26 + 14, 104, 6, 50, "#123a3c");
+  R(c, 256, 60, 156, 96, "#0c1618"); for (let y = 70; y < 156; y += 10) R(c, 256, y, 156, 1, "#1a2628");
+  R(c, 316, 132, 34, 3, "#2a3436"); R(c, 320, 114, 26, 18, "#141c1e"); R(c, 322, 116, 22, 14, "#04100c"); R(c, 318, 135, 2, 25, "#1a2224"); R(c, 346, 135, 2, 25, "#1a2224");
+  R(c, 368, 112, 38, 48, "#3a3a32"); R(c, 368, 112, 38, 1, "#5a5a4a");
+  for (let r = 0; r < 5; r++) for (let q2 = 0; q2 < 4; q2++) { R(c, 370 + q2 * 9, 115 + r * 9, 8, 8, "#2e2e28"); R(c, 373 + q2 * 9, 118 + r * 9, 2, 1, "#a89a6a"); }
+  R(c, 436, 146, 54, 6, "#3a3430"); R(c, 438, 143, 50, 4, "#5a3a3a"); R(c, 438, 143, 12, 3, "#c8c0b0"); R(c, 436, 152, 2, 8, "#2a2420"); R(c, 488, 152, 2, 8, "#2a2420");
+  R(c, 496, 136, 18, 24, "#3a2a1e"); R(c, 496, 136, 18, 1, "#6a5030"); R(c, 500, 130, 6, 6, "#5a5a5a"); R(c, 507, 132, 5, 4, "#6a2a2a"); R(c, 507, 128, 5, 4, "#2a4a6a");
+  plant(c, 440, 130, 12, 81); R(c, 440, 130, 12, 2, "#5a3424");
+  for (let k = 0; k < 5; k++) { R(c, 452 + k * 9, 100, 1, 8 + (k % 2) * 4, "#2a2a2a"); R(c, 450 + k * 9, 108 + (k % 2) * 4, 5, 2, "#e8e4dc"); }
+  R(c, 476, 116, 1, 20, "#1a1a1a"); R(c, 472, 112, 9, 4, "#5a5030");
+  for (let row = 0, y = FEET; y < H; y += 3, row++) R(c, 0, y, 520, 3, row % 2 === 0 ? "#08100f" : "#060c0c");
+  R(c, 0, FEET, 520, 1, "#2a4a48");
+}
+// Halcyon Tower across the bay: the only place in the city where the sun still reaches
+function tower(b: Ctx, camC: number, t: number): void {
+  const x = Math.round(W * 0.66 - camC * 0.04);
+  b.globalAlpha = 0.9;
+  R(b, x - 10, 96, 20, FEET - 96, "#0a1820"); R(b, x - 6, 62, 12, FEET - 62, "#0b1c26"); R(b, x - 3, 50, 6, 12, "#0d2230"); R(b, x, 44, 1, 6, "#0d2230");
+  b.globalAlpha = 1;
+  for (let y = 66; y < FEET - 10; y += 5) if (h1(y * 1.3) > 0.4) R(b, x - 4 + (y % 3) * 3, y, 1, 1, "#ffd27a");
+  glow(b, x, 52, 34, "255,200,110", 0.5 + 0.08 * Math.sin(t * 0.8)); R(b, x - 1, 51, 3, 2, "#fff0c0");
+  for (let k = 0; k < 6; k++) { b.globalAlpha = 0.4; R(b, x - 44 + k * 15 + Math.round(Math.sin(t * 0.15 + k) * 3), 58 + (k % 2), 18, 2, "#8aa8b0"); }
+  b.globalAlpha = 1;
+  if (Math.sin(t * 3) > 0.6) { R(b, x, 44, 1, 1, "#ff5a5a"); glow(b, x, 44, 5, "255,90,90", 0.8); }
+}
+function pierBack(b: Ctx, cam: number, t: number): void {
+  const top = 124;
+  const gw = b.createLinearGradient(0, top, 0, FEET); gw.addColorStop(0, "#0c2a2e"); gw.addColorStop(1, "#04141a");
+  b.fillStyle = gw; b.fillRect(0, top, W, FEET - top); R(b, 0, top, W, 1, "#3a7a7a");
+  for (let i = 0; i < 30; i++) { const x = ((h1(i * 3.1) * (W + 60) - cam * 0.5 + Math.sin(t * 0.6 + i) * 3) % (W + 60) + W + 60) % (W + 60) - 30; const y = top + 2 + (i % 7) * 5; b.globalAlpha = 0.22 + 0.16 * Math.sin(t * 2.2 + i); R(b, x, y, 3 + (i % 4) * 3, 1, i % 5 === 0 ? "#5ff0d8" : i % 3 === 0 ? "#ff8fb5" : "#ffcf7a"); }
+  b.globalAlpha = 1;
+  for (let k = 0; k < 3; k++) {
+    const x = Math.round(((k * 380 + 120 - cam * 0.6) % 1000 + 1000) % 1000 - 200); if (x < -60 || x > W + 20) continue;
+    const y = top + 3 + k * 2 + Math.round(Math.sin(t * 0.9 + k) * 1);
+    R(b, x, y, 40, 4, "#06100f"); R(b, x + 8, y - 6, 16, 6, "#06100f"); R(b, x + 14, y - 22, 1, 16, "#06100f");
+    R(b, x + 10, y - 4, 2, 2, "#ffcf7a"); glow(b, x + 11, y - 3, 8, "255,200,120", 0.6); R(b, x + 14, y - 23, 1, 1, "#ff5a5a");
+  }
+  if (G.gfx) { const lx = Math.round(30 - cam * 0.35); const a = t * 0.5; b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.07 + 0.05 * Math.max(0, Math.cos(a)); b.fillStyle = "#fff0d0"; b.beginPath(); b.moveTo(lx, 108); b.lineTo(lx + Math.cos(a) * 300, 100 + Math.sin(a) * 14 - 8); b.lineTo(lx + Math.cos(a) * 300, 100 + Math.sin(a) * 14 + 8); b.closePath(); b.fill(); b.restore(); R(b, lx - 2, 108, 5, 16, "#0a1618"); R(b, lx - 1, 106, 3, 2, "#fff0d0"); glow(b, lx, 107, 10, "255,240,210", 0.8); }
+}
+function vents(b: Ctx, cam: number, xs: number[], t: number): void {
+  for (const vx of xs) { const sx = Math.round(vx - cam); if (sx < -20 || sx > W + 20) continue; R(b, sx - 1, FEET - 1, 7, 1, "#1a2224"); for (let i = 0; i < 8; i++) { const p = (t * 12 + i * 6) % 50; b.globalAlpha = 0.22 * (1 - p / 50); R(b, sx + Math.round(Math.sin(t + i) * 3), FEET - p, 4, 3, "#a8d0c8"); b.globalAlpha = 1; } }
+}
+function hangSign(b: Ctx, x: number, y: number, s: string, col: string, t: number, seed: number): void {
+  if (x < -30 || x > W + 30) return;
+  const sw = Math.round(Math.sin(t * 1.7 + seed) * (1 + windK(t)) * 1.2); const w = s.length * 4 + 3;
+  R(b, x, y, 1, 4, "#1a1a1a"); R(b, x + w - 1, y, 1, 4, "#1a1a1a");
+  R(b, x + sw, y + 4, w, 9, "#0a1014"); neon(b, s, x + sw + 2, y + 6, col, t, seed, 1);
+}
+function windK(t: number): number { return 0.5 + 0.5 * Math.sin(t * 0.23) * Math.sin(t * 0.07 + 1); }
+function drawPierDyn(b: Ctx, cam: number): void {
+  const t = G.t; const S = (x: number): number => Math.round(x - cam); const f = G.flags;
+  winLife(b, cam, t, PWINS);
+  neon(b, "JUNO GRILL", S(326), 84, "#ffb04a", t, 63, 1);
+  holoAd(b, S(560), 34, 52, 34, "heart", t, 65);
+  holoAd(b, S(840), 2 + 44, 46, 30, "sun", t, 67);
+  holoAd(b, S(990), 46, 40, 28, "eye", t, 69);
+  hangSign(b, S(252), 113, "BAIT", "#7affc0", t, 71);
+  // barrel fire at Sol's camp
+  { const sx = S(150); const fl = 0.7 + 0.3 * h1(Math.floor(t * 12)); glow(b, sx, 140, 28, "255,140,60", 0.7 * fl); for (let k = 0; k < 6; k++) { const p = (t * 1.4 + k / 6) % 1; R(b, sx - 4 + Math.round(h1(k + Math.floor(t * 3)) * 8), 143 - p * 14, 1, 2, p < 0.5 ? "#ffd06a" : "#ff6a3a"); } for (let k = 0; k < 3; k++) { const p = (t * 0.3 + k / 3) % 1; b.globalAlpha = 0.25 * (1 - p); R(b, sx - 2 + Math.round(Math.sin(t + k) * 3), 128 - p * 30, 3, 2, "#a8a8a0"); b.globalAlpha = 1; } }
+  // grill smoke and steam over Juno's skewers
+  for (let k = 0; k < 6; k++) { const p = (t * 0.5 + k / 6) % 1; b.globalAlpha = 0.3 * (1 - p); R(b, S(336 + k * 10) + Math.round(Math.sin(t * 1.5 + k) * 2 + p * 6 * windK(t)), 130 - p * 26, 3, 2, "#e8e0d0"); } b.globalAlpha = 1;
+  for (let k = 0; k < 9; k++) { const on = h1(k + Math.floor(t * 4)) > 0.3; R(b, S(334 + k * 7), 131, 3, 1, on ? "#ff7a3a" : "#8a3a1a"); }
+  // Wren's paper birds on strings
+  for (let k = 0; k < 9; k++) { const x = S(560 + k * 9); const y = 100 + Math.round(Math.sin(Math.PI * (k * 9) / 84) * 4) + 6 + (k % 3) * 4; const sw = Math.round(Math.sin(t * 2 + k) * windK(t) * 2); R(b, x, y - 5 - (k % 3) * 4, 1, 5 + (k % 3) * 4, "#2a2a2a"); R(b, x - 2 + sw, y, 5, 1, "#e8e4dc"); R(b, x + sw, y - 1, 1, 1, "#e8e4dc"); }
+  PLAMPS.forEach((lx: number, i: number) => { const sx = S(lx); if (sx < -50 || sx > W + 50) return; if (i === 1 && !flick(t, 97)) return; glow(b, sx + 5, 114, 36, "255,190,110", 0.55); b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.08; b.fillStyle = "#ffd8a0"; b.beginPath(); b.moveTo(sx + 4, 114); b.lineTo(sx + 18, FEET); b.lineTo(sx - 10, FEET); b.closePath(); b.fill(); b.restore(); });
+  // coolant trail: faint synthetic-blue spots leading to the hatch
+  for (let k = 0; k < 24; k++) { const x = 740 + k * 14 + Math.round(h1(k * 3.3) * 6); const a = 0.35 + 0.35 * Math.sin(t * 2 + k); b.globalAlpha = f.coolant ? a : a * 0.8; R(b, S(x), FEET - 2, 3, 1, "#3df5ff"); b.globalAlpha = 1; if (k % 4 === 0) glow(b, S(x) + 1, FEET - 2, 4, "61,245,255", 0.3); }
+  const kp = Math.sin(t * 5) > 0; R(b, S(1080), 134, 4, 2, f.codeOk ? "#5dff9a" : kp ? "#ff4a4a" : "#5a1a1a"); glow(b, S(1082), 135, 6, f.codeOk ? "93,255,154" : "255,74,74", 0.6);
+  if (f.codeOk) { R(b, S(1062), 154, 22, 3, "#020304"); glow(b, S(1073), 156, 14, "95,240,216", 0.6); }
+  vents(b, cam, [480, 940], t);
+}
+function drawPierFront(b: Ctx, cam: number): void {
+  const S = (x: number): number => Math.round(x - cam);
+  for (const [x, w] of [[300, 30], [700, 22], [1090, 10]] as [number, number][]) { R(b, S(x), FEET - 6, w, 6, "#2a1e14"); R(b, S(x), FEET - 6, w, 1, "#5a4228"); }
+}
+function drawLabDyn(b: Ctx, cam: number): void {
+  const t = G.t; const S = (x: number): number => Math.round(x - cam);
+  { const sx = S(31); b.save(); b.globalCompositeOperation = "lighter"; const gr = b.createLinearGradient(0, 0, 0, FEET); gr.addColorStop(0, "rgba(150,200,230,0.22)"); gr.addColorStop(1, "rgba(150,200,230,0)"); b.fillStyle = gr; b.beginPath(); b.moveTo(sx - 12, 0); b.lineTo(sx + 12, 0); b.lineTo(sx + 30, FEET); b.lineTo(sx - 30, FEET); b.closePath(); b.fill(); b.restore(); }
+  for (let i = 0; i < 6; i++) {
+    const x = S(84 + i * 26); if (x < -24 || x > W + 4) continue;
+    const pu = 0.5 + 0.5 * Math.sin(t * 1.1 + i * 0.7); const empty = i === 5;
+    glow(b, x + 9, 128, 20, "80,240,210", 0.18 + 0.12 * pu);
+    if (!empty) { R(b, x + 6, 110, 6, 3, "#3a2a2a"); R(b, x + 6, 113, 6, 6, "#4a8a82"); R(b, x + 5, 120, 8, 30, "#2a6a64"); R(b, x + 8, 116, 1, 1, "#0c3234"); }
+    else { R(b, x + 4, 108, 1, 12, "#5ff0d8"); R(b, x + 5, 120, 1, 9, "#5ff0d8"); R(b, x + 3, 129, 1, 6, "#5ff0d8"); }
+    for (let k = 0; k < 3; k++) { const p = (t * 0.3 + k / 3 + i * 0.17) % 1; b.globalAlpha = 0.6 * (1 - p); R(b, x + 4 + ((k * 5 + i) % 10), 152 - p * 44, 1, 1, "#9ff0e0"); } b.globalAlpha = 1;
+    const on = empty ? Math.sin(t * 6) > 0 : true; R(b, x + 8, 98, 2, 1, empty ? (on ? "#ff4a4a" : "#4a1010") : "#5dff9a");
+  }
+  const col = Math.floor(t * 5) % 19;
+  for (let iy = 0; iy < 8; iy++) for (let ix = 0; ix < 19; ix++) {
+    const h = h1(ix * 3.1 + iy * 7.7); if (h < 0.25) continue; const x = S(260 + ix * 8); if (x < -4 || x > W + 4) continue;
+    const lit = ix === col ? 1 : 0.35 + 0.3 * Math.sin(t * (0.4 + h) + ix);
+    R(b, x, 62 + iy * 10, 3, 7, h > 0.7 ? `rgba(255,176,74,${lit})` : h > 0.45 ? `rgba(95,240,216,${lit})` : `rgba(255,111,154,${lit})`);
+  }
+  glow(b, S(260 + col * 8), 100, 18, "95,240,216", 0.25);
+  { const sx = S(322); for (let k = 0; k < 5; k++) if (h1(k + Math.floor(t * 2)) > 0.2) R(b, sx + 2, 118 + k * 2, 4 + Math.floor(h1(k * 3 + Math.floor(t)) * 14), 1, "#5dff9a"); glowRect(b, sx, 116, 22, 14, "#5dff9a", 0.3); }
+  glow(b, S(477), 118, 30, "255,190,110", 0.55);
+  { const a = Math.sin(t * 3); glow(b, S(258), 30, 16, "255,60,50", 0.25 + 0.35 * Math.max(0, a)); R(b, S(256), 28, 4, 3, a > 0 ? "#ff4a3a" : "#5a1a10"); }
+  for (const dx of [150, 300, 420]) { const p = (t * 0.6 + dx * 0.01) % 1; const sx = S(dx); if (p < 0.8) R(b, sx, 28 + p * 165, 1, 2, "#9fd0e0"); else { const r = Math.round((p - 0.8) * 30); b.globalAlpha = 0.5 * (1 - (p - 0.8) * 5); R(b, sx - r, FEET + 3, r * 2 + 1, 1, "#9fd0e0"); b.globalAlpha = 1; } }
+}
+// ---------- ambient life: stray cats, birds and bats, drones, litter, splashes, lit windows ----------
+type Kit = { loc: LocId; x: number; dir: number; st: number; t: number; s: number; x0: number; x1: number };
+type Bird = { loc: LocId; x: number; y: number; px: number; py: number; vx: number; vy: number; st: number; t: number; s: number; bat: boolean };
+function makeLife(): { kits: Kit[]; birds: Bird[] } {
+  const kits: Kit[] = []; const birds: Bird[] = [];
+  const K = (loc: LocId, x: number, x0: number, x1: number, s: number): void => { kits.push({ loc, x, dir: 1, st: 0, t: 2 + h1(s) * 4, s, x0, x1 }); };
+  K("district", 250, 140, 420, 1); K("district", 760, 620, 900, 2); K("district", 1180, 1100, 1320, 3);
+  K("market", 420, 300, 600, 4); K("market", 820, 700, 880, 5);
+  K("pier", 140, 60, 300, 6); K("pier", 520, 440, 740, 7); K("pier", 900, 780, 960, 8);
+  const B = (loc: LocId, x: number, y: number, bat: boolean): void => { birds.push({ loc, x, y, px: x, py: y, vx: 0, vy: 0, st: 0, t: 0, s: x * 0.37 + y, bat }); };
+  for (const [x, y] of [[150, 94], [158, 94], [236, 94], [610, 49], [618, 49], [960, 91], [968, 91], [1314, 107], [1322, 107]] as number[][]) B("district", x ?? 0, y ?? 0, false);
+  for (const [x, y] of [[262, 145], [270, 145], [284, 145], [702, 145], [716, 145], [984, 79], [1000, 79], [820, 39], [836, 39], [852, 39]] as number[][]) B("pier", x ?? 0, y ?? 0, false);
+  for (const x of [300, 312, 640, 652]) B("market", x, 30, true);
+  return { kits, birds };
+}
+function meow(): void { tone(720, 0.16, "triangle", 0.012, 0, 520); }
+function flutter(bat: boolean): void { for (let k = 0; k < 5; k++) noiseHit(0.03, bat ? 1800 : 1200, 0.03, "bandpass", true, k * 0.05); if (!bat && G.loc === "pier" && Math.random() < 0.6) tone(1500, 0.22, "triangle", 0.012, 0.1, 1000); }
+function updLife(dt: number): void {
+  const g = G; const lw = LOCW[g.loc];
+  for (const k of g.kits) {
+    if (k.loc !== g.loc) continue;
+    const d = g.px - k.x; k.t -= dt;
+    if (Math.abs(d) < 24 && k.st !== 2 && g.scene === "play" && Math.abs(g.vx) > 20) { k.st = 2; k.dir = d > 0 ? -1 : 1; k.t = 1.3; if (Math.random() < 0.5) meow(); }
+    if (k.t <= 0) { if (k.st !== 0) { k.st = 0; k.t = 3 + Math.random() * 6; } else { k.st = 1; k.dir = Math.random() < 0.5 ? -1 : 1; k.t = 2 + Math.random() * 3; } }
+    k.x += k.dir * (k.st === 2 ? 75 : k.st === 1 ? 11 : 0) * dt;
+    if (k.st === 1) { if (k.x < k.x0) k.dir = 1; if (k.x > k.x1) k.dir = -1; }
+    k.x = clamp(k.x, 4, lw - 4);
+  }
+  for (const bd of g.birds) {
+    if (bd.loc !== g.loc) continue;
+    if (bd.st === 0) {
+      if (g.scene === "play" && Math.abs(g.px - bd.x) < (bd.bat ? 40 : 30) && (Math.abs(g.vx) > 30 || !g.grounded || Math.random() < dt * 0.3)) { bd.st = 1; bd.vx = (bd.x > g.px ? 1 : -1) * (40 + h1(bd.s) * 30); bd.vy = -30 - h1(bd.s + 1) * 25; bd.t = 0; if (Math.random() < 0.6) flutter(bd.bat); }
+    } else {
+      bd.t += dt; bd.x += bd.vx * dt; bd.y += bd.vy * dt; bd.vy += (bd.bat ? Math.sin(g.t * 8 + bd.s) * 60 : -4) * dt;
+      if (bd.t > 9) { const sx = bd.px - g.cam; if (sx < -20 || sx > W + 20) { bd.st = 0; bd.x = bd.px; bd.y = bd.py; } }
+    }
+  }
+}
+const KITC = ["#2a2420", "#c88a4a", "#5a5a5e", "#e8e0d4"];
+function drawKit(b: Ctx, k: Kit, sx: number, t: number): void {
+  const y = FEET; const f = k.dir; const col = KITC[Math.floor(k.s) % KITC.length] ?? "#2a2420";
+  const X = (dx: number, w: number): number => f > 0 ? sx + dx : sx - dx - w + 1;
+  shade(b, sx, y, 4, 0.6);
+  if (k.st === 0) {
+    R(b, X(-2, 5), y - 4, 5, 4, col); R(b, X(1, 3), y - 7, 3, 3, col); R(b, X(1, 1), y - 8, 1, 1, col); R(b, X(3, 1), y - 8, 1, 1, col);
+    const tw = Math.round(Math.sin(t * 1.5 + k.s) * 1); R(b, X(-4, 2), y - 1 + tw, 2, 1, col); R(b, X(-5, 1), y - 2 + tw, 1, 1, col);
+    if ((t + k.s) % 5 > 0.15) { R(b, X(3, 1), y - 6, 1, 1, "#c8ff6a"); glow(b, X(3, 1), y - 6, 3, "200,255,106", 0.35); }
+  } else {
+    const ph = Math.sin(k.x * (k.st === 2 ? 0.9 : 0.6)) > 0;
+    R(b, X(-3, 7), y - 5, 7, 3, col); R(b, X(3, 3), y - 7, 3, 3, col); R(b, X(3, 1), y - 8, 1, 1, col); R(b, X(5, 1), y - 8, 1, 1, col);
+    R(b, X(ph ? -3 : -2, 1), y - 2, 1, 2, col); R(b, X(ph ? 2 : 3, 1), y - 2, 1, 2, col);
+    R(b, X(-5, 2), y - 6 - (k.st === 2 ? 1 : 0), 2, 1, col);
+  }
+}
+function drawBird(b: Ctx, bd: Bird, sx: number, y: number, t: number): void {
+  const col = bd.bat ? "#07080c" : bd.loc === "pier" ? "#c8ccd0" : "#3a4048";
+  if (bd.st === 0) { if (bd.bat) { R(b, sx, y, 2, 3, col); R(b, sx - 1, y, 1, 1, col); R(b, sx + 2, y, 1, 1, col); return; } R(b, sx, y - 2, 3, 2, col); R(b, sx + (Math.sin(t * 0.7 + bd.s) > 0 ? 2 : -1), y - 3, 2, 1, col); R(b, sx + 1, y, 1, 1, "#d8a040"); return; }
+  const up = Math.sin(t * (bd.bat ? 26 : 16) + bd.s) > 0;
+  R(b, sx, y, 2, 1, col);
+  if (up) { R(b, sx - 2, y - 1, 2, 1, col); R(b, sx + 2, y - 1, 2, 1, col); } else { R(b, sx - 2, y + 1, 2, 1, col); R(b, sx + 2, y + 1, 2, 1, col); }
+}
+// lit windows: a few have someone moving past, a TV flicker, or a light switching off and on
+const DWINS: number[][] = [];
+(function initWins(): void {
+  const B = [[0, 132, 6, 11, 100], [132, 272, 18, 21, 84], [380, 490, 26, 33, 90], [490, 600, 0, 41, 150], [640, 770, 22, 51, 96], [770, 920, 0, 61, 140], [920, 1080, 16, 71, 92], [1200, 1310, 30, 91, 110]];
+  for (const bb of B) {
+    const x0 = bb[0] ?? 0; const x1 = bb[1] ?? 0; const top = bb[2] ?? 0; const seed = bb[3] ?? 0; const wb = bb[4] ?? 0;
+    for (let wy = top + 8, iy = 0; wy < wb; wy += 11, iy++) for (let wx = x0 + 6, ix = 0; wx < x1 - 8; wx += 12, ix++) { const r = h1(seed + ix * 3.3 + iy * 9.1); if (r < 0.5 && !(x0 === 490 && wy < 92) && !(x0 === 132 && wy > 78)) DWINS.push([wx, wy, r]); }
+  }
+})();
+function winLife(b: Ctx, cam: number, t: number, wins: number[][]): void {
+  const pw = wins === PWINS ? 8 : 6; const ph2 = wins === PWINS ? 6 : 7;
+  for (const w of wins) {
+    const wx = w[0] ?? 0; const wy = w[1] ?? 0; const r = w[2] ?? 0; const sx = Math.round(wx - cam); if (sx < -8 || sx > W + 2) continue;
+    if (h1(Math.floor(t * 0.2) + r * 50) > 0.94) { R(b, sx, wy, pw, ph2, "#060a10"); continue; }
+    if (h1(r * 17) > 0.82) { b.globalAlpha = 0.12 + 0.28 * h1(Math.floor(t * 8) + r * 9); R(b, sx, wy, pw, ph2, "#7aa8ff"); b.globalAlpha = 1; }
+    if (!G.gfx || h1(r * 31) < 0.4) continue;
+    const ph = (t * (0.04 + h1(r * 7) * 0.06) + h1(r * 13)) % 1;
+    if (ph < 0.45) { const o = Math.round(-2 + (ph / 0.45) * (pw + 3)); const a0 = Math.max(sx, sx + o); const a1 = Math.min(sx + pw, sx + o + 2); if (a1 > a0) { R(b, a0, wy + 2, a1 - a0, ph2 - 2, "#1a1008"); if (o >= 0 && o < pw) R(b, sx + o, wy + 1, Math.min(2, pw - o), 1, "#1a1008"); } }
+  }
+}
+function drawLife(b: Ctx, cam: number, t: number, front: boolean): void {
+  const g = G; const L = g.loc; const lw = LOCW[L]; const hi = g.gfx > 0;
+  if (!front) {
+    if (L !== "market") {
+      const nd = hi ? 3 : 1;
+      for (let i = 0; i < nd; i++) {
+        const dir = i % 2 ? -1 : 1; const span = lw + 200; const wx = (((h1(i * 5.7 + 1) * span + t * (22 + i * 7) * dir) % span) + span) % span - 100;
+        const sx = Math.round(wx - cam); if (sx < -10 || sx > W + 10) continue;
+        const y = 68 + i * 9 + Math.round(Math.sin(t * 2 + i) * 2); const rf = Math.floor(t * 20 + i) % 2;
+        R(b, sx - 3, y, 7, 2, "#141c22"); R(b, sx - 5, y - 1, 3, 1, rf ? "#6a7a80" : "#2a3a40"); R(b, sx + 3, y - 1, 3, 1, rf ? "#2a3a40" : "#6a7a80");
+        R(b, sx, y + 2, 1, 3, "#0a0e12"); R(b, sx - 1, y + 5, 3, 3, i === 1 ? "#5ff0d8" : "#8a6a3a");
+        if (Math.sin(t * 6 + i) > 0) { R(b, sx - 3, y + 1, 1, 1, "#ff4a4a"); glow(b, sx - 3, y + 1, 4, "255,74,74", 0.6); }
+        R(b, sx + 3, y + 1, 1, 1, "#5ff0d8"); glow(b, sx + 3, y + 1, 4, "95,240,216", 0.5);
+      }
+      if (hi) {
+        const cyc = 34; const p = ((t + (L === "pier" ? 11 : 0)) % cyc) / cyc;
+        if (p < 0.5) { const x0 = -30 + (p / 0.5) * (W + 60); for (let k = 0; k < 7; k++) { const fx = Math.round(x0 - (k % 4) * 7 - Math.floor(k / 4) * 3); const fy = Math.round(48 + (k % 4) * 3 + Math.floor(k / 4) * 6 + Math.sin(t * 2 + k) * 1.5); const up = Math.sin(t * 14 + k) > 0; R(b, fx, fy, 2, 1, "#10181e"); R(b, fx - 2, fy + (up ? -1 : 1), 2, 1, "#10181e"); R(b, fx + 2, fy + (up ? -1 : 1), 2, 1, "#10181e"); } }
+        if (L === "pier") for (let k = 0; k < 3; k++) { const fx = Math.round(((k * 260 + 160 - cam * 0.6) % 900 + 900) % 900 - 100 + Math.cos(t * 0.4 + k * 2) * 40); const fy = Math.round(64 + k * 6 + Math.sin(t * 0.4 + k * 2) * 10); const up = Math.sin(t * 5 + k) > 0.6; R(b, fx, fy, 2, 1, "#d8dcdc"); R(b, fx - 3, fy + (up ? -1 : 0), 3, 1, "#d8dcdc"); R(b, fx + 2, fy + (up ? -1 : 0), 3, 1, "#d8dcdc"); }
+      }
+    }
+    for (const bd of g.birds) { if (bd.loc !== L) continue; const sx = Math.round(bd.x - cam); if (sx < -6 || sx > W + 6 || bd.y < -10) continue; drawBird(b, bd, sx, Math.round(bd.y), t); }
+    return;
+  }
+  for (const k of g.kits) { if (k.loc !== L) continue; const sx = Math.round(k.x - cam); if (sx < -10 || sx > W + 10) continue; drawKit(b, k, sx, t); }
+  if (L !== "market") {
+    const n = hi ? 7 : 3; const wd = windK(t); const span = lw + 60;
+    for (let i = 0; i < n; i++) {
+      const wx = ((h1(i * 7.3) * span + t * (10 + h1(i) * 16) * (0.3 + wd)) % span) - 30; const sx = Math.round(wx - cam); if (sx < -4 || sx > W + 4) continue;
+      const air = i % 3 === 0; const y = air ? FEET - 10 - Math.abs(Math.sin(t * 1.3 + i)) * 16 * wd : FEET - 1 - Math.abs(Math.sin(t * 4 + i * 2)) * 3;
+      const fl = Math.sin(t * 9 + i) > 0; R(b, sx, Math.round(y), fl ? 2 : 1, fl ? 1 : 2, i % 4 === 0 ? "#ff8fb5" : i % 4 === 1 ? "#d8d0c0" : "#a8a090");
+    }
+  }
+  const ns = L === "market" ? 2 : hi ? 6 : 2;
+  for (let k = 0; k < ns; k++) {
+    const r = t * 2.2 + k * 0.618; const slot = Math.floor(r); const ph = r - slot; if (ph > 0.35) continue;
+    const x = L === "market" ? Math.round([330, 585, 690][(slot + k) % 3] ?? 330) - cam + Math.round(h1(slot) * 16) : Math.floor(h1(slot * 3.1 + k * 17) * W);
+    const u = ph / 0.35; const hgt = Math.sin(u * Math.PI); b.globalAlpha = 0.75 * (1 - u);
+    R(b, x - 1 - Math.round(u * 3), FEET - 1 - Math.round(hgt * 3), 1, 1, "#cfeff0"); R(b, x + 1 + Math.round(u * 3), FEET - 1 - Math.round(hgt * 3), 1, 1, "#cfeff0"); R(b, x, FEET - 2 - Math.round(hgt * 5), 1, 1, "#e8fffa"); R(b, x - Math.round(u * 4), FEET, Math.round(u * 8) + 1, 1, "#8fc8c8");
+    b.globalAlpha = 1;
+  }
 }
 
 type Look = { coat: string; hair: string; skin: string; accent: string; rim: string; h: number; extra: string; b?: string; cl?: number; hs?: string; sh?: string; pa?: string; shoe?: string; open?: boolean; cool?: string };
@@ -766,6 +1058,8 @@ function npcPose(n: Npc, moving: boolean, t: number): Pose {
   else if (id === "smoke") { const on = Math.sin(t * 0.8) > 0.4; P.s0 = on ? 0.35 : 0.1; P.e0 = on ? 2.55 : 0.9; P.s1 = 0.4; P.e1 = 1.5; }
   else if (id === "scan" && n.wait > 0) { P.s0 = 1.35; P.e0 = 0.15; }
   else if (id === "wrist" && n.wait > 0) { P.s0 = 0.5; P.e0 = 1.6; P.tilt = 0.3; }
+  else if (id === "fold") { const a = Math.sin(t * 2.2); P.s0 = 0.8 + 0.08 * a; P.e0 = 1.35; P.s1 = 0.72 - 0.08 * a; P.e1 = 1.35; P.tilt = 0.32; P.lean = 0.06; }
+  else if (id === "warm") { const a = Math.sin(t * 0.9); P.s0 = 0.95 + 0.05 * a; P.e0 = 0.45; P.s1 = 0.85; P.e1 = 0.5; P.lean = 0.1; P.tilt = 0.1; }
   return P;
 }
 const ELOOK: Look = { coat: "#1a1f29", hair: "#2c1c14", skin: "#d6a88c", accent: "#a8a48e", rim: "#ffb466", h: 31, extra: "collar stubble", b: "m", cl: 2, hs: "tousle", sh: "#a6a28a", pa: "#13151b", shoe: "#060607", open: true, cool: "#5fd8d0" };
@@ -897,8 +1191,14 @@ const ITEMS: Record<string, Item> = {
   tape: { name: "Street recording", cat: "Audio recordings", ev: true, desc: "Pulled off a patrol drone. A woman humming, and a man: Vale wants the M batch moved before the rain stops." },
   lullaby: { name: "Lullaby chip", cat: "Memory chips", ev: false, desc: "Someone's childhood: a kitchen, a song, a window full of sun. Who sells sunlight?" },
   chip: { name: "Unmarked memory chip", cat: "Memory chips", ev: true, desc: "Black casing, no label. A tiny ring with a rising sun is etched on the edge." },
+  bead: { name: "Nova's glass bead", cat: "Clues", ev: false, desc: "A green glass bead from Nova's first stall. The Forgotten on Tidewater Pier know it." },
+  bird: { name: "Paper bird (M-06)", cat: "Documents", ev: true, desc: "Wren folded it from an old AURELION intake form. Still legible on one wing: LAB 7 / UNIT M-06." },
+  manifest: { name: "Crate manifest", cat: "Documents", ev: true, desc: "Stencilled on an AURELION crate: M BATCH, 6 UNITS. SERVICE ACCESS = LAB NO. + UNIT NO." },
+  ribbon: { name: "Red ribbon", cat: "Clues", ev: true, desc: "Caught in the seal of pod M-06. Mara wore one exactly like it on the pier." },
+  valelog: { name: "Vale's voice memo", cat: "Audio recordings", ev: true, desc: "Dr. V. Vale, personal log: they want M-06 wiped again. She keeps asking for someone called Elias." },
+  indexcard: { name: "Archive index card", cat: "Documents", ev: true, desc: "AURELION archive card: VOSS, ELIAS. TEMPLATE E-01. STATUS: ACTIVE. Elias has never seen this card before." },
 };
-const OBJ = ["Leave Elias's apartment", "Travel through the Lower District", "Find the underground memory market", "Speak to NOVA", "Investigate the mysterious memory chip"];
+const OBJ = ["Leave Elias's apartment", "Travel through the Lower District", "Find the underground memory market", "Speak to NOVA", "Investigate the mysterious memory chip", "Locate the abandoned laboratory", "Find the entrance", "Investigate the memory archive", "Discover the AURELION experiment"];
 const MISSIONS = ["001 · GHOSTS IN THE RAIN", "002 · THE FORGOTTEN ONES", "003 · A CITY WITHOUT SUNLIGHT", "004 · AFTER RAIN"];
 
 type Kind = "SPEAK" | "ENTER" | "ACCESS" | "EXAMINE" | "COLLECT";
@@ -909,7 +1209,7 @@ type Npc = { id: string; name: string; loc: LocId; x: number; y: number; x0: num
 type Spot = { id: string; loc: LocId; x: number; y: number; kind: Kind; label: string; show: () => boolean; use: () => void };
 type Target = { id: string; x: number; y: number; kind: Kind; label: string; use: () => void; walker?: boolean };
 type Panel = "none" | "pause" | "bag" | "journal" | "settings" | "credits";
-type Scene = "menu" | "cut" | "play" | "glitch" | "end";
+type Scene = "menu" | "cut" | "play" | "glitch" | "vis" | "end";
 type Drop = { x: number; y: number; v: number; l: number; g: number };
 type Car = { x: number; y: number; speed: number; dir: number; layer: number };
 type Ped = { loc: LocId; x: number; lane: number; dir: number; sp: number; look: Look; look2: Look; kind: string; st: string; base: string; stT: number; seed: number; bubT: number; dy: number; gl: number; half: boolean };
@@ -921,7 +1221,7 @@ const PRIM = ["#5ff0d8", "#ff6f9a", "#ffb04a", "#9a8cff"];
 const PEXTRA = ["", "", "", "glasses", "bag", "headset", "beanie", "hat", "", "bag", "collar", "pack", "cap", ""];
 const PKINDS = ["coat", "umb", "neon", "hood", "umb", "kid", "couple", "worker", "rider", "dog", "synth", "coat", "hood", "neon", "coat", "umb"];
 const NEONS = ["#ff6f9a", "#5ff0d8", "#ffb04a", "#9a8cff"];
-const PSTOP: Record<LocId, [number, string][]> = { apt: [], district: [[183, "shop"], [399, "shop"], [677, "shop"], [959, "shop"], [96, "look"], [545, "look"], [721, "look"], [1110, "look"], [1258, "look"]], market: [[190, "shop"], [360, "shop"], [520, "shop"], [770, "shop"], [266, "look"], [864, "look"]] };
+const PSTOP: Record<LocId, [number, string][]> = { apt: [], lab: [], pier: [[176, "look"], [362, "shop"], [614, "look"], [880, "look"]], district: [[183, "shop"], [399, "shop"], [677, "shop"], [959, "shop"], [96, "look"], [545, "look"], [721, "look"], [1110, "look"], [1258, "look"]], market: [[190, "shop"], [360, "shop"], [520, "shop"], [770, "shop"], [266, "look"], [864, "look"]] };
 function mixHex(a: string, b: string, k: number): string {
   if (!/^#[0-9a-f]{6}$/i.test(a)) return a;
   const p = (s: string, i: number): number => parseInt(s.slice(i, i + 2), 16);
@@ -970,6 +1270,10 @@ function makePeds(): Ped[] {
   add("district", [[112, 1, "vendor", "vendor"], [70, 0, "coat", "look"], [78, 0, "kid", "look"], [300, 0, "coat", "shelter"], [314, 0, "neon", "shelter"], [556, 0, "coat", "chat"], [564, 0, "hood", "chat"], [572, 0, "synth", "chat"], [718, 0, "worker", "smoke"], [790, 0, "dog", "look"], [866, 0, "hood", "smoke"], [1010, 0, "coat", "chat"], [1018, 0, "umb", "chat"], [1160, 0, "synth", "smoke"], [1296, 0, "couple", "shelter"], [1330, 0, "coat", "chat"], [1338, 0, "kid", "chat"]], 300);
   for (let i = 0; i < 14; i++) o.push(mkPed("market", h1(i * 5.3 + 2) * 900, i % 3 === 0 ? 0 : 1, PKINDS[(i + 3) % PKINDS.length] ?? "coat", "walk", 700 + i * 7, i % 2 === 1));
   for (let i = 0; i < 2; i++) o.push(mkPed("market", i * 450 + 200, 2, "coat", "walk", 900 + i * 11, i === 1));
+  add("district", [[690, 1, "coat", "wave"]], 1300);
+  add("market", [[150, 1, "coat", "wave"]], 1310);
+  for (let i = 0; i < 9; i++) o.push(mkPed("pier", h1(i * 4.9 + 3) * 1100, i % 3 === 0 ? 0 : 1, ["coat", "umb", "synth", "hood", "synth", "worker", "umb", "kid", "coat"][i] ?? "coat", "walk", 1400 + i * 7, i % 2 === 1));
+  add("pier", [[112, 0, "synth", "shelter"], [130, 0, "synth", "smoke"], [212, 0, "kid", "look"], [330, 0, "coat", "shop"], [398, 0, "synth", "shop"], [500, 0, "synth", "chat"], [508, 0, "hood", "chat"], [700, 0, "synth", "shelter"], [740, 0, "dog", "look"], [930, 0, "synth", "look"]], 1500);
   add("market", [[176, 0, "coat", "shop"], [204, 0, "kid", "shop"], [292, 0, "hood", "chat"], [300, 0, "coat", "chat"], [452, 0, "synth", "shop"], [600, 0, "worker", "smoke"], [640, 0, "coat", "chat"], [648, 0, "neon", "chat"], [748, 0, "coat", "shop"], [850, 0, "couple", "look"]], 1000);
   return o;
 }
@@ -995,6 +1299,14 @@ function updPeds(dt: number): void {
     if (p.st === "chat" && p.bubT <= 0 && Math.random() < dt * 0.35) { p.bubT = 1.4 + Math.random(); const sx = p.x - g.cam; if (sx > 0 && sx < W && (g.gfx || !p.half)) mumble(); }
   }
 }
+// waves under the pier boards, the odd gull; a cold drip and server hum in Lab 7
+function pierAmb(): void {
+  const g = G; if (!SND || g.scene !== "play") return;
+  g.ambT -= 0.25; if (g.ambT > 0) return;
+  if (g.loc === "pier") { g.ambT = 2.5 + Math.random() * 3; noiseHit(1.8, 260, 0.06 * g.amb, "lowpass", true); if (Math.random() < 0.25) tone(1300 + Math.random() * 300, 0.3, "triangle", 0.008, 0, 900); }
+  else if (g.loc === "lab") { g.ambT = 1.5 + Math.random() * 3; tone(1700 + Math.random() * 500, 0.08, "sine", 0.012, 0, 900); }
+  else g.ambT = 2;
+}
 function pedAudio(): void {
   if (!SND) return;
   const g = G; let near = 0; let steps = 0;
@@ -1003,8 +1315,8 @@ function pedAudio(): void {
     const d = Math.abs(p.x - g.px); if (d < 160) near += 1 - d / 160;
     if (p.st === "walk" && d < 70 && p.kind !== "rider" && Math.random() < 0.5) steps = Math.max(steps, 1 - d / 70);
   }
-  const base = g.loc === "market" ? 0.1 : g.loc === "district" ? 0.02 : 0;
-  SND.murmur.gain.setTargetAtTime(g.loc === "apt" || g.scene !== "play" ? 0 : Math.min(0.2, base + near * 0.012), SND.ctx.currentTime, 0.5);
+  const base = g.loc === "market" ? 0.1 : g.loc === "district" ? 0.02 : g.loc === "pier" ? 0.03 : 0;
+  SND.murmur.gain.setTargetAtTime(g.loc === "apt" || g.loc === "lab" || g.scene !== "play" ? 0 : Math.min(0.2, base + near * 0.012), SND.ctx.currentTime, 0.5);
   if (steps > 0) noiseHit(0.04, g.loc === "district" ? 2200 : 1100, 0.035 * steps, g.loc === "district" ? "highpass" : "bandpass", false, Math.random() * 0.2);
   if (g.loc === "district") { const tx = tramX(g.t, g.cam * 0.45); const on = tx > -170 && tx < W; if (on && !g.tramOn) noiseHit(5, 140, 0.16, "lowpass", true); g.tramOn = on; }
 }
@@ -1019,6 +1331,7 @@ function pedPose(fr: number, sd: number, D: number): Pose {
   if (fr === 20 || fr === 21) { P.br = fr === 20 ? 1 : 0; P.s0 = 0.06 + 0.03 * P.br; P.s1 = -0.06; P.hx = 0.2 * Math.sin(sd); P.k0 = 0.12; }
   else if (fr === 22) { P.s0 = 0.35; P.e0 = 2.55; P.s1 = 0.4; P.e1 = 1.5; P.k1 = 0.25; }
   else if (fr === 23) { P.s0 = 0.55; P.e0 = 1.9; P.s1 = 0.1; P.tilt = 0.35; }
+  else if (fr === 25 || fr === 26) { P.s0 = 2.6; P.e0 = fr === 25 ? 0.25 : 0.85; P.s1 = 0.08; P.tilt = -0.05; }
   else if (fr === 24) { P.s0 = 1.15; P.e0 = 0.25; P.s1 = 1.05; P.e1 = 0.3; P.lean = 0.16; P.t0 = 0.18; P.k0 = 0.2; P.t1 = -0.12; P.k1 = 0.12; }
   return P;
 }
@@ -1054,7 +1367,7 @@ function drawPed(b: Ctx, p: Ped, x: number, y: number, t: number): void {
     for (let k = 0; k < 3; k++) { const qq = (t * 0.6 + k / 3) % 1; b.globalAlpha = 0.35 * (1 - qq); R(b, x + 9 + k * 4 + Math.sin(t * 2 + k) * 1.5, y - 16 - qq * 12, 2, 2, "#e8e0d0"); b.globalAlpha = 1; }
     f = 1; fig(L, x, idf, y); return;
   }
-  const fr = mv ? wf : p.st === "smoke" ? 22 : p.st === "look" ? 23 : idf;
+  const fr = mv ? wf : p.st === "smoke" ? 22 : p.st === "look" ? 23 : p.st === "wave" && (p.gl > 0 || Math.sin(t * 0.7 + p.seed) > 0.8) ? (Math.sin(t * 9) > 0 ? 25 : 26) : idf;
   if (p.kind === "dog") {
     const dx = x + f * 11; const dp = ph * Math.PI * 4; const bb = mv ? Math.round(Math.abs(Math.sin(dp))) : 0; const lg = mv ? Math.round(Math.sin(dp)) : 0;
     shade(b, dx, y, 8, 0.8);
@@ -1091,7 +1404,7 @@ type Game = {
   panel: Panel; rev: number; near: string; toast: { text: string; t: number } | null; banner: { a: string; b: string; t: number } | null;
   npcs: Npc[]; chat: Chat | null; chatCd: number; drops: Drop[]; cars: Car[]; flash: number;
   music: number; sfx: number; amb: number; gfx: number; textSpeed: number; saveNote: string; bagTab: string; openItem: string; ringing: boolean;
-  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; beat: number; sweep: number; sndT: number; lookX: number; peds: Ped[]; tramOn: boolean;
+  coyote: number; jbuf: number; jumpHeld: boolean; parts: Part[]; fly: Fly | null; flyCd: number; beat: number; sweep: number; sndT: number; lookX: number; peds: Ped[]; tramOn: boolean; kits: Kit[]; birds: Bird[]; ambT: number;
 };
 
 const LK: Record<string, Look> = {
@@ -1105,6 +1418,10 @@ const LK: Record<string, Look> = {
   tam: { coat: "#3a4a3a", hair: "#909090", skin: "#b88a70", accent: "#a0a060", rim: "#ffb04a", h: 28, extra: "", b: "old", cl: 1, hs: "short", sh: "#a0a060", pa: "#22261e", open: true },
   rook: { coat: "#2a2a3a", hair: "#8a6aaa", skin: "#a8a0b0", accent: "#7affc0", rim: "#7affc0", h: 33, extra: "headset", b: "thin", cl: 2, hs: "long", sh: "#3a3a50", pa: "#14141e", open: true },
   nova: { coat: "#e0e4e4", hair: "#5ff0d8", skin: "#c89a8a", accent: "#ffb04a", rim: "#ff6f9a", h: 30, extra: "visor", b: "f", cl: 2, hs: "bob", sh: "#ff6f9a", pa: "#2a2a34", open: false },
+  sol: { coat: "#3a3428", hair: "#c8c0b0", skin: "#e0d4cc", accent: "#5ff0d8", rim: "#5ff0d8", h: 30, extra: "beanie beard", b: "old", cl: 3, hs: "short", sh: "#5a4a3a", pa: "#1e1a16", open: true, cool: "#5ff0d8" },
+  juno: { coat: "#6a3a2a", hair: "#1a1010", skin: "#a87458", accent: "#ffb04a", rim: "#ffb04a", h: 29, extra: "headband apron", b: "f", cl: 1, hs: "bun", sh: "#c85a2a", pa: "#221612" },
+  wren: { coat: "#e8e4dc", hair: "#2a1a20", skin: "#e6dcd4", accent: "#ff6f9a", rim: "#ff6f9a", h: 27, extra: "", b: "thin", cl: 1, hs: "bob", sh: "#dfe6e6", pa: "#3a3a40", cool: "#5ff0d8" },
+  vale: { coat: "#dcdcd4", hair: "#a8a8a8", skin: "#d8b8a0", accent: "#7ac8ff", rim: "#7ac8ff", h: 29, extra: "glasses", b: "f", cl: 3, hs: "bun", sh: "#5a6a7a", pa: "#24262c", open: true },
   ped: { coat: "#04080a", hair: "#04080a", skin: "#0c1416", accent: "#04080a", rim: "", h: 29, extra: "" },
 };
 const NPCX: Record<string, { idle: string; stops: number[]; barks: string[] }> = {
@@ -1118,7 +1435,13 @@ const NPCX: Record<string, { idle: string; stops: number[]; barks: string[] }> =
   tam: { idle: "doze", stops: [], barks: ["Zzz...", "Mm... five more minutes..."] },
   rook: { idle: "", stops: [190, 360, 520], barks: ["Was I here yesterday?", "Smells like somebody's summer."] },
   nova: { idle: "smoke", stops: [], barks: ["Mm.", "Don't touch the glass."] },
+  sol: { idle: "warm", stops: [], barks: ["Six years of tide. Counting.", "Fire's free. Questions cost."] },
+  juno: { idle: "stir", stops: [], barks: ["Skewers! Hot, mostly protein!", "Four credits, warm hands!"] },
+  wren: { idle: "fold", stops: [], barks: ["Fold, crease, fly.", "Mind the gulls."] },
+  vale: { idle: "", stops: [], barks: [] },
 };
+// Dr. Vale stays hidden until Elias has gone through her archive
+function onNpc(n: Npc): boolean { return n.loc === G.loc && (n.id !== "vale" || G.obj >= 8 || !!G.flags.valeIn); }
 function mkNpc(id: string, name: string, loc: LocId, x: number, y: number, x0: number, x1: number, speed: number, react: string[]): Npc {
   const ex = NPCX[id] ?? { idle: "", stops: [], barks: [] };
   return { id, name, loc, x, y, x0, x1, dir: 1, speed, wait: 0, look: LK[id] ?? LK.ped ?? { coat: "#000", hair: "#000", skin: "#000", accent: "#000", rim: "", h: 19, extra: "" }, met: false, bubble: "", bubbleT: 0, react, idle: ex.idle, stops: ex.stops, barks: ex.barks, barkCd: 2 + Math.random() * 5, peek: 0 };
@@ -1135,6 +1458,10 @@ function makeNpcs(): Npc[] {
     mkNpc("tam", "Tam", "market", 520, FEET, 520, 520, 0, ["Mm. On break. Forever.", "Recall stall. Your past, slightly used.", "Don't buy the cheap ones. They itch."]),
     mkNpc("rook", "Rook", "market", 300, FEET, 90, 860, 9, ["Last night I was a pilot. Tonight I'm a kid at the sea.", "Do you ever forget whose hands these are?", "Nova's chips are the real ones. Too real."]),
     mkNpc("nova", "NOVA", "market", 770, FEET, 770, 770, 0, []),
+    mkNpc("sol", "Sol", "pier", 176, FEET, 176, 176, 0, []),
+    mkNpc("juno", "Juno", "pier", 362, FEET, 362, 362, 0, []),
+    mkNpc("wren", "Wren", "pier", 614, FEET, 614, 614, 0, []),
+    mkNpc("vale", "Dr. Vale", "lab", 470, FEET, 470, 470, 0, []),
   ];
 }
 function makeDrops(): Drop[] { const d: Drop[] = []; for (let i = 0; i < 150; i++) d.push({ x: Math.random() * 380, y: Math.random() * H, v: 160 + Math.random() * 120, l: 3 + Math.floor(Math.random() * 4), g: FEET + Math.random() * 20 }); return d; }
@@ -1148,7 +1475,7 @@ function newGame(): Game {
     panel: "none", rev: 1, near: "", toast: null, banner: null,
     npcs: makeNpcs(), chat: null, chatCd: 6, drops: makeDrops(), cars: makeCars(), flash: 0,
     music: 0.6, sfx: 0.7, amb: 0.7, gfx: 1, textSpeed: 1, saveNote: "", bagTab: "items", openItem: "", ringing: false,
-    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, beat: -1, sweep: 6, sndT: 0, lookX: 0, peds: makePeds(), tramOn: false,
+    coyote: 0, jbuf: 0, jumpHeld: false, parts: [], fly: null, flyCd: 4, beat: -1, sweep: 6, sndT: 0, lookX: 0, peds: makePeds(), tramOn: false, ...makeLife(), ambT: 0,
   };
 }
 const G: Game = newGame();
@@ -1165,7 +1492,7 @@ function syncDir(): void {
 type Snd = { ctx: AudioContext; music: GainNode; sfx: GainNode; pads: Record<string, GainNode>; rain: GainNode; rainF: BiquadFilterNode; noise: AudioBuffer; amb: GainNode; hum: GainNode; murmur: GainNode; steam: GainNode; buzz: GainNode };
 let SND: Snd | null = null;
 let MOOD = "";
-const CHORDS: Record<string, number[]> = { menu: [110, 130.8, 164.8], apt: [98, 116.5, 146.8], district: [110, 138.6, 164.8, 207.7], market: [92.5, 110, 138.6, 185], glitch: [103.8, 110, 155.6] };
+const CHORDS: Record<string, number[]> = { menu: [110, 130.8, 164.8], apt: [98, 116.5, 146.8], district: [110, 138.6, 164.8, 207.7], market: [92.5, 110, 138.6, 185], glitch: [103.8, 110, 155.6], pier: [87.3, 110, 130.8, 174.6], lab: [77.8, 92.5, 116.5], vision: [110, 138.6, 164.8, 220] };
 function audioInit(): void {
   if (SND) { if (SND.ctx.state === "suspended") void SND.ctx.resume(); return; }
   const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -1199,6 +1526,8 @@ function audioInit(): void {
     const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);
     void ctx.resume();
     SND = { ctx, music, sfx, pads, rain, rainF, noise, amb, hum, murmur, steam, buzz };
+    // iOS: speech only works after a call made inside a user gesture, so prime it silently here
+    if (speechOk()) { try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; window.speechSynthesis.speak(u); } catch { /* no speech */ } }
     const m = MOOD || "menu"; MOOD = ""; setMood(m);
   } catch { SND = null; }
 }
@@ -1208,14 +1537,15 @@ function setMood(m: string): void {
   if (!SND) return;
   const now = SND.ctx.currentTime;
   for (const k of Object.keys(SND.pads)) { const p = SND.pads[k]; if (p) p.gain.setTargetAtTime(k === m ? 1 : 0, now, 0.9); }
-  const rv = m === "district" ? 0.16 : m === "menu" ? 0.14 : m === "apt" ? 0.045 : m === "market" ? 0.015 : 0;
+  const rv = m === "district" ? 0.16 : m === "pier" ? 0.13 : m === "menu" ? 0.14 : m === "apt" ? 0.045 : m === "market" ? 0.015 : m === "lab" ? 0.02 : 0;
   SND.rain.gain.setTargetAtTime(rv, now, 0.6);
-  SND.rainF.frequency.setTargetAtTime(m === "apt" ? 900 : 2200, now, 0.5);
+  SND.rainF.frequency.setTargetAtTime(m === "apt" || m === "lab" ? 900 : m === "pier" ? 1700 : 2200, now, 0.5);
   const ag = (n: GainNode, v: number): void => { n.gain.setTargetAtTime(v, now, 0.8); };
-  ag(SND.hum, m === "district" ? 0.5 : m === "menu" ? 0.35 : m === "market" ? 0.25 : m === "apt" ? 0.14 : 0.05);
+  ag(SND.hum, m === "district" ? 0.5 : m === "pier" ? 0.42 : m === "lab" ? 0.3 : m === "menu" ? 0.35 : m === "market" ? 0.25 : m === "apt" ? 0.14 : 0.05);
   ag(SND.murmur, m === "market" ? 0.16 : 0);
   ag(SND.buzz, m === "district" ? 0.01 : m === "market" ? 0.008 : 0);
   ag(SND.steam, 0);
+  if (ADV.n && m !== "district" && m !== "market" && m !== "pier") ADV.n.bus.gain.setTargetAtTime(0, now, 0.3);
 }
 function tone(f: number, dur: number, type: OscillatorType, vol: number, at: number, slide: number): void {
   if (!SND) return;
@@ -1248,9 +1578,11 @@ function step(): void {
   const r = G.run ? 1.3 : 1;
   if (G.loc === "apt") { noiseHit(0.06, 420, 0.12 * r); tone(95, 0.06, "sine", 0.04 * r, 0, 70); }
   else if (G.loc === "district") { noiseHit(0.08, 2400, 0.06 * r, "highpass"); noiseHit(0.06, 600, 0.09 * r); }
+  else if (G.loc === "pier") { noiseHit(0.07, 320, 0.13 * r); tone(140, 0.05, "triangle", 0.03 * r, 0, 110); }
+  else if (G.loc === "lab") { noiseHit(0.1, 1800, 0.07 * r, "bandpass"); noiseHit(0.05, 500, 0.06 * r); }
   else { noiseHit(0.05, 900, 0.09 * r); tone(1700, 0.02, "square", 0.012 * r, 0, 0); }
 }
-function land(): void { step(); noiseHit(0.12, 380, 0.16); if (G.loc === "district") noiseHit(0.18, 3000, 0.06, "highpass"); }
+function land(): void { step(); noiseHit(0.12, 380, 0.16); if (G.loc === "district" || G.loc === "lab") noiseHit(0.18, 3000, 0.06, "highpass"); }
 function coin(): void { tone(1320, 0.06, "square", 0.035, 0, 0); tone(1980, 0.12, "square", 0.03, 0.06, 0); }
 function thunder(): void { noiseHit(2.8, 140, 0.4, "lowpass", true, 0.4 + Math.random() * 0.8); }
 function whoosh(dir: number): void {
@@ -1263,6 +1595,102 @@ function whoosh(dir: number): void {
   let out: AudioNode = g;
   try { const p = c.createStereoPanner(); p.pan.setValueAtTime(-0.8 * dir, t0); p.pan.linearRampToValueAtTime(0.8 * dir, t0 + 2.4); g.connect(p); out = p; } catch { out = g; }
   out.connect(SND.sfx); s.start(t0); s.stop(t0 + 2.5);
+}
+// ---------- holo-ad audio: brand jingles, a soft pad, and a low announcer, only outdoors ----------
+type AdDef = { n: number[]; f: number; w: OscillatorType; pad: number[]; say: string[] };
+const ADSND: Record<string, AdDef> = {
+  aur: { n: [0, 4, 7, 12, 7], f: 392, w: "sine", pad: [196, 293.7, 392], say: ["Aurelion. Your past, perfected.", "Remember better. Aurelion."] },
+  sun: { n: [0, 2, 4, 9], f: 523.3, w: "triangle", pad: [261.6, 329.6, 392], say: ["Halcyon. Bottled sun, for cloudy hearts.", "Feel the sun again. Halcyon."] },
+  koi: { n: [7, 4, 7, 12, 9], f: 440, w: "square", pad: [220, 277.2, 329.6], say: ["Koi Koi noodles. Slurp the rain away."] },
+  eye: { n: [0, 0, -5], f: 329.6, w: "sine", pad: [110, 164.8, 220], say: ["Sentry. We see you. Safely.", "Stay in the light. Sentry is watching over you."] },
+  heart: { n: [0, 3, 7, 10, 7], f: 349.2, w: "triangle", pad: [174.6, 207.7, 261.6], say: ["Meridian. Feel again.", "Lonely? Meridian. Feelings, on demand."] },
+  moon: { n: [12, 7, 3, 0], f: 466.2, w: "sine", pad: [116.5, 138.6, 174.6], say: ["Dreamline. Sleep deeper tonight."] },
+};
+const ADS: Partial<Record<LocId, [number, string][]>> = {
+  district: [[86, "eye"], [545, "aur"], [820, "koi"], [962, "heart"], [1254, "sun"]],
+  market: [[271, "moon"], [873, "heart"]],
+  pier: [[586, "heart"], [863, "sun"], [1010, "eye"]],
+};
+type AdNodes = { bus: GainNode; padG: GainNode; pan: StereoPannerNode | null; oscs: OscillatorNode[] };
+const ADV: { n: AdNodes | null; cd: number; spk: number; last: string; pad: string; voice: boolean } = { n: null, cd: 4, spk: 8, last: "", pad: "", voice: false };
+function speechOk(): boolean { return typeof window !== "undefined" && typeof (window as unknown as { speechSynthesis?: unknown }).speechSynthesis !== "undefined" && typeof SpeechSynthesisUtterance !== "undefined"; }
+function adHush(): void { if (ADV.voice && speechOk()) { try { window.speechSynthesis.cancel(); } catch { /* no speech */ } } ADV.voice = false; }
+function adNodes(): AdNodes | null {
+  if (ADV.n || !SND) return ADV.n;
+  try {
+    const c = SND.ctx; const bus = c.createGain(); bus.gain.value = 0; bus.connect(SND.amb);
+    const padG = c.createGain(); padG.gain.value = 0; const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1100;
+    let pan: StereoPannerNode | null = null;
+    try { pan = c.createStereoPanner(); padG.connect(lp); lp.connect(pan); pan.connect(bus); } catch { pan = null; padG.connect(lp); lp.connect(bus); }
+    const oscs: OscillatorNode[] = [];
+    for (let k = 0; k < 3; k++) { const o = c.createOscillator(); o.type = k === 2 ? "triangle" : "sine"; o.frequency.value = 220; o.detune.value = (k - 1) * 6; const og = c.createGain(); og.gain.value = 0.33; o.connect(og); og.connect(padG); o.start(); oscs.push(o); }
+    ADV.n = { bus, padG, pan, oscs };
+  } catch { ADV.n = null; }
+  return ADV.n;
+}
+function adJingle(key: string, vol: number, pan: number): void {
+  const d = ADSND[key]; const n = adNodes(); if (!d || !n || !SND) return;
+  const c = SND.ctx; const t0 = c.currentTime + 0.05;
+  const g = c.createGain(); g.gain.value = vol;
+  let out: AudioNode = g;
+  try { const p = c.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); g.connect(p); out = p; } catch { out = g; }
+  out.connect(n.bus);
+  d.n.forEach((st: number, i: number) => {
+    const f = d.f * Math.pow(2, st / 12); const at = t0 + i * 0.16; const o = c.createOscillator(); o.type = d.w; o.frequency.setValueAtTime(f, at);
+    const e = c.createGain(); e.gain.setValueAtTime(0, at); e.gain.linearRampToValueAtTime(d.w === "square" ? 0.25 : 0.6, at + 0.015); e.gain.exponentialRampToValueAtTime(0.0001, at + 0.42);
+    o.connect(e); e.connect(g); o.start(at); o.stop(at + 0.45);
+    const o2 = c.createOscillator(); o2.type = "sine"; o2.frequency.setValueAtTime(f * 2, at); const e2 = c.createGain(); e2.gain.setValueAtTime(0, at); e2.gain.linearRampToValueAtTime(0.12, at + 0.01); e2.gain.exponentialRampToValueAtTime(0.0001, at + 0.6); o2.connect(e2); e2.connect(g); o2.start(at); o2.stop(at + 0.62);
+  });
+}
+// synth announcer fallback: a buzzy formant murmur, one blip per syllable
+function adMurmur(text: string, vol: number, pan: number): void {
+  const n = adNodes(); if (!n || !SND) return;
+  const c = SND.ctx; const t0 = c.currentTime + 0.8; const syl = Math.min(14, Math.max(3, Math.round(text.length / 4)));
+  const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(96, t0);
+  const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 4; const g = c.createGain(); g.gain.setValueAtTime(0, t0);
+  for (let k = 0; k < syl; k++) { const at = t0 + k * 0.17; bp.frequency.setValueAtTime(500 + h1(k + text.length) * 900, at); o.frequency.setValueAtTime(92 + h1(k * 3) * 14 - k * 0.8, at); g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(vol, at + 0.03); g.gain.linearRampToValueAtTime(vol * 0.2, at + 0.14); }
+  g.gain.linearRampToValueAtTime(0, t0 + syl * 0.17 + 0.05);
+  let out: AudioNode = g;
+  try { const p = c.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); g.connect(p); out = p; } catch { out = g; }
+  o.connect(bp); bp.connect(g); out.connect(n.bus); o.start(t0); o.stop(t0 + syl * 0.17 + 0.1);
+}
+function adSpeak(text: string, vol: number, pan: number): void {
+  if (speechOk()) {
+    try {
+      const u = new SpeechSynthesisUtterance(text); u.pitch = 0.6; u.rate = 0.92; u.volume = clamp(vol, 0, 0.25); u.lang = "en-US";
+      u.onend = () => { ADV.voice = false; }; u.onerror = () => { ADV.voice = false; };
+      setTimeout(() => { if (!G.dlg && outside(G.loc) && G.scene === "play" && G.fadeTo === 0) { ADV.voice = true; window.speechSynthesis.speak(u); } }, 900);
+      return;
+    } catch { /* fall through to the synth voice */ }
+  }
+  adMurmur(text, vol * 0.25, pan);
+}
+function adTick(step: number): void {
+  if (!SND) return;
+  const n = adNodes(); if (!n) return;
+  const g = G; const now = SND.ctx.currentTime;
+  const ext = outside(g.loc) && g.scene === "play" && g.fadeTo === 0 && g.panel === "none";
+  n.bus.gain.setTargetAtTime(ext ? (g.dlg ? 0.22 : 1) : 0, now, ext ? 0.8 : 0.3);
+  if (!ext || g.dlg) adHush();
+  if (!ext) { n.padG.gain.setTargetAtTime(0, now, 0.4); return; }
+  const list = ADS[g.loc] ?? []; let best: [number, string] | null = null; let bd = 1e9;
+  for (const a of list) { const d = Math.abs(a[0] - g.px); if (d < bd) { bd = d; best = a; } }
+  if (!best) return;
+  const prox = clamp(1 - bd / 220, 0, 1); const pan = clamp((best[0] - g.cam - W / 2) / (W / 2), -1, 1) * 0.8;
+  const def = ADSND[best[1]];
+  if (def && ADV.pad !== best[1]) { ADV.pad = best[1]; n.oscs.forEach((o: OscillatorNode, i: number) => o.frequency.setTargetAtTime(def.pad[i] ?? (def.pad[0] ?? 220) * 2, now, 0.6)); }
+  n.padG.gain.setTargetAtTime(0.05 * Math.pow(prox, 1.5), now, 0.5);
+  if (n.pan) n.pan.pan.setTargetAtTime(pan, now, 0.3);
+  ADV.cd -= step; ADV.spk -= step;
+  if (ADV.cd > 0 || g.dlg) return;
+  const near = list.filter((a: [number, string]) => Math.abs(a[0] - g.px) < 260);
+  if (near.length === 0) { ADV.cd = 2; return; }
+  const pick = near.find((a: [number, string]) => a[1] !== ADV.last && Math.random() < 0.6) ?? near[0];
+  if (!pick) return;
+  const pp = clamp(1 - Math.abs(pick[0] - g.px) / 260, 0, 1); const ppan = clamp((pick[0] - g.cam - W / 2) / (W / 2), -1, 1) * 0.85;
+  adJingle(pick[1], 0.07 * (0.25 + 0.75 * pp), ppan); ADV.last = pick[1]; ADV.cd = 6 + Math.random() * 5;
+  const d = ADSND[pick[1]];
+  if (d && ADV.spk <= 0 && pp > 0.3 && g.amb > 0.05 && Math.random() < 0.45) { ADV.spk = 18 + Math.random() * 10; adSpeak(pickR(d.say), 0.25 * g.amb * (0.4 + 0.6 * pp), ppan); }
 }
 function puff(x: number, y: number, n: number): void {
   if (G.parts.length > 60) return;
@@ -1301,12 +1729,13 @@ function loadGame(): void {
     G.flags = d.flags && typeof d.flags === "object" ? { ...d.flags } : {};
     G.items = Array.isArray(d.items) ? d.items.filter((id: string) => !!ITEMS[id]) : [];
     G.credits = typeof d.credits === "number" ? d.credits : 20;
-    G.obj = typeof d.obj === "number" ? clamp(Math.floor(d.obj), 0, 5) : 0;
+    G.obj = typeof d.obj === "number" ? clamp(Math.floor(d.obj), 0, OBJ.length) : 0;
     G.m2 = !!d.m2 || G.obj >= 5;
     G.notes = Array.isArray(d.notes) ? d.notes.slice() : [];
-    const loc: LocId = d.loc === "district" || d.loc === "market" ? d.loc : "apt";
+    const loc: LocId = d.loc === "district" || d.loc === "market" || d.loc === "pier" || d.loc === "lab" ? d.loc : "apt";
     G.flags.called = 1; G.flags.rang = 1;
     G.scene = "play"; G.loc = loc; G.px = clamp(typeof d.px === "number" ? d.px : 104, 8, LOCW[loc] - 8); G.cam = clamp(G.px - W / 2, 0, LOCW[loc] - W); G.fade = 1;
+    if (G.obj === 8 && !G.flags.valeIn) G.flags.valeIn = 1;
     syncObj(true); G.saveNote = "Game loaded."; setMood(loc); applyVol(); G.rev++;
   } catch { G.saveNote = "That save could not be read."; G.rev++; }
 }
@@ -1334,12 +1763,13 @@ function say(lines: Line[], done: (() => void) | null, push: boolean): void {
   G.dlg = { lines: lines.slice(), i: 0, chars: 0, waiting: false, done, push, acted: -1 }; G.rev++;
 }
 function go(loc: LocId, x: number): void {
-  G.fadeTo = 1;
+  G.fadeTo = 1; adHush();
   G.fadeCb = () => {
     G.loc = loc; G.px = x; G.py = FEET; G.vx = 0; G.vy = 0; G.facing = x > LOCW[loc] / 2 ? -1 : 1;
     G.cam = clamp(x - W / 2, 0, LOCW[loc] - W); setMood(loc);
     if (loc === "district") complete(0);
     if (loc === "market") { if (G.obj === 1) complete(1); complete(2); }
+    if (loc === "lab") complete(6);
     saveGame(true);
     G.rev++;
   };
@@ -1357,14 +1787,26 @@ function objInfo(): ObjI {
   if (o === 2) return { text, hint: f.market ? "Take the stairs down at the green grate." : f.knowGrate ? "The green grate is east, past Clinic 24. Examine it." : "Ask around (Ines, Lulu, Hiro) or search east past Clinic 24.", loc: "district", x: 1250 };
   if (o === 3) return { text, hint: f.metNova ? "Talk to NOVA again and ask about the chip." : "NOVA's stall is at the back (east), under the red lantern.", loc: "market", x: 770 };
   if (o === 4) return { text, hint: "Use the memory reader by the pillar, or BAG > chip > Investigate.", loc: "market", x: 636 };
-  return { text: "Explore freely", hint: "Mission 002 is unlocked in your JOURNAL. More coming soon.", loc: "", x: 0 };
+  if (o === 5) {
+    if (!f.knowLab) return { text, hint: "Ask NOVA in the memory market what the chip showed you.", loc: "market", x: 770 };
+    if (G.loc !== "pier") return { text, hint: "Tidewater Pier: through the seawall gate at the east end of Kessler Street.", loc: "district", x: 1340 };
+    return { text, hint: "The pump house is at the far end of the pier. The Forgotten live along the way.", loc: "pier", x: 1000 };
+  }
+  if (o === 6) return { text, hint: f.hatch ? (f.codeOk ? "The hatch is open. Climb down." : "Hatch keypad: lab number, then unit number." + (has("manifest") ? "" : " Check the crates.")) : "The front door is welded. Ask the Forgotten, or follow the blue coolant drips.", loc: "pier", x: f.hatch ? 1072 : 614 };
+  if (o === 7 && has("ribbon") && !has("valelog") && !(has("tape") || f.askVale || has("manifest"))) return { text, hint: "The memo is encrypted. The AURELION crates up on the pier carry a manifest that could unlock it.", loc: "pier", x: 872 };
+  if (o === 7) { const x = !has("ribbon") ? 218 : !has("valelog") ? 330 : 386; return { text, hint: !has("ribbon") ? "Look at the pods. One of them is empty." : !has("valelog") ? "Read the archive terminal. Evidence you carry may unlock more." : "Search the index drawers.", loc: "lab", x }; }
+  if (o === 8) return { text, hint: "Talk to Dr. Vale.", loc: "lab", x: 470 };
+  if (o >= OBJ.length) return { text: "Mission 002 complete", hint: "Mission 003: A CITY WITHOUT SUNLIGHT is next. Replay chapters from the JOURNAL.", loc: "", x: 0 };
+  return { text: "Explore freely", hint: "Mission 002 is unlocked in your JOURNAL.", loc: "", x: 0 };
 }
 function objTargetX(): number | null {
   const o = objInfo(); if (!o.loc) return null;
   if (o.loc === G.loc) return o.x;
   if (G.loc === "apt") return 334;
   if (G.loc === "market") return 34;
-  return o.loc === "market" ? 1250 : 42;
+  if (G.loc === "lab") return 30;
+  if (G.loc === "pier") return o.loc === "lab" ? 1072 : 22;
+  return o.loc === "market" ? 1250 : o.loc === "pier" || o.loc === "lab" ? 1340 : 42;
 }
 
 function termHub(): Line[] {
@@ -1401,9 +1843,186 @@ function novaDeal(): Line[] {
   ch.push({ label: "Not yet.", next: () => [{ who: "NOVA", text: "It'll be here. Probably." }] });
   return [{ who: "NOVA", text: `The chip is ${price} credits. ${tone_ < 0 ? "That's the rude-customer rate." : "Friends and family rate. You're neither."}`, choices: ch }];
 }
+// ---------- Mission 002: THE FORGOTTEN ONES ----------
+const M1N = 5;
+const M2ITEMS = ["bead", "bird", "manifest", "ribbon", "valelog", "indexcard"];
+const M2FLAGS = ["knowLab", "novaM2", "paidLab", "kaneRang", "kaneCall", "solMet", "wrenTold", "wrenPromise", "junoVans", "hatch", "coolant", "sign", "doorSeen", "tally", "codeOk", "codeTry", "podsSeen", "arch1", "arch2", "valeIn", "valeMet0", "valeMet", "vTape", "vRib", "vCard", "vKane", "vCall", "vPhoto", "valeTrust", "m2done", "skewer", "wrenBirds", "solTally", "junoAsk"];
+function V(text: string): Line { return { who: "DR. VALE", text }; }
+function novaM2(): Line[] {
+  const f = G.flags; const tn = f.novaTone ?? 0;
+  if (f.knowLab) return [{ who: "NOVA", text: tn === -1 ? "Tidewater Pier. Pump house. Now go and be rude to the sea." : "Tidewater Pier, Elias. The pump house at the far end. Bring me back a good story." }];
+  const tell = (bead: boolean): Line[] => [
+    { who: "NOVA", text: "Lab 7 never closed. AURELION just stopped admitting it existed. It's under the old pump house on Tidewater Pier, past the seawall gate at the east end of Kessler Street." },
+    { who: "NOVA", text: "The pier belongs to the Forgotten now. Synthetics AURELION wiped and dumped when their memories went out of fashion." },
+    ...(bead ? [{ who: "NOVA", text: "Take this. A bead from my first stall. The Forgotten know it. They'll know I sent you.", act: () => { give("bead"); } } as Line] : []),
+    { who: "NOVA", text: "Go on. Before I change my mind.", act: () => { f.knowLab = 1; G.notes.push("NOVA: Lab 7 is under the pump house on Tidewater Pier, through the seawall gate at the east end of Kessler Street."); G.rev++; } },
+  ];
+  const open: Line[] = [
+    { who: "NOVA", text: tn === 1 ? "You came out of my reader white as rice paper. ...What did you see?" : tn === -1 ? "Still here, detective? My reader doesn't do refunds." : "That look. The chip bit you, didn't it?", act: () => { f.novaM2 = 1; } },
+    E("AURELION. Lab 7. Dr. Vale. And Mara, in the rain, telling me not to trust it."),
+  ];
+  if (f.traded) open.push({ who: "NOVA", text: "The pier memory you traded me... I watched it last night. There's a pump house at the end of that pier. Same rust. Same rain." });
+  else if (f.paid === 45) open.push({ who: "NOVA", text: "You paid the rude-customer rate for that chip. Lucky for you, rude money spends the same." });
+  else if (f.paid === 25) open.push({ who: "NOVA", text: "Twenty-five credits and a ghost. Best deal you'll get all year." });
+  if (f.askMara) open.push({ who: "NOVA", text: "The woman in your photo. I told you somebody was busy remembering her. Now you know who." });
+  if (f.askVale) open.push({ who: "NOVA", text: "And Vale. I told you not to say that name down here. Now you're going to go and find it, aren't you." });
+  if (tn === -1 && !f.traded) {
+    const ch: Choice[] = [
+      { label: "I was out of line before. I'm sorry.", next: () => { f.novaTone = 0; return [E("I was out of line before. I'm sorry."), { who: "NOVA", text: "...Took you long enough. Fine." }, ...tell(true)]; } },
+    ];
+    if (G.credits >= 10) ch.push({ label: "Pay 10 credits for directions", next: () => { pay(10); f.paidLab = 1; return [{ who: "NOVA", text: "Rude-customer rate. You're consistent, I'll give you that." }, ...tell(true)]; } });
+    ch.push({ label: "I'll find it myself.", next: () => [E("I'll find it myself."), { who: "NOVA", text: "Then you'll drown looking. ...Fine. Free of charge, and free of help." }, ...tell(false)] });
+    return [...open, { who: "NOVA", text: "Where is Lab 7? That's what you want. Information costs extra for people who were rude to me.", choices: ch }];
+  }
+  return [...open, { who: "NOVA", text: "You want to know where Lab 7 is.", choices: [
+    { label: "Please, Nova.", next: () => [E("Please, Nova."), ...tell(true)] },
+    { label: "Come with me.", next: () => [E("Come with me."), { who: "NOVA", text: tn === 1 ? "Sweet. No. Somebody has to stay down here and remember where everyone went." : "I don't leave the market. The market doesn't leave me." }, ...tell(true)] },
+  ] }];
+}
+function kaneCallLines(): Line[] {
+  const f = G.flags;
+  return [
+    { who: "", text: "[Elias's phone buzzes. CALLER: DET. KANE.]", act: () => { f.kaneRang = 1; G.ringing = false; } },
+    { who: "KANE", text: "Bram says you walked east past the seawall. There's nothing east of the seawall but water and things nobody wants, Elias." },
+    ...(has("kane") ? [E("You wrote me a warning, Kane. Now you call. Which one is for the record?")] : []),
+    ...(f.askKane ? [E("Nova says you were in the market last week. With a warrant and a smile.")] : []),
+    { who: "KANE", text: "Go home. ...Please.", choices: [
+      { label: "Just walking, Kane.", next: () => { f.kaneCall = 1; return [E("Just walking, Kane."), { who: "KANE", text: "Sure. Walk somewhere dry." }]; } },
+      { label: "I know about Lab 7.", next: () => { f.kaneCall = 2; return [E("I know about Lab 7."), { who: "KANE", text: "...Then you know enough to get yourself erased. Don't trust the rain, Elias." }, E("That's what she said.")]; } },
+      { label: "[Hang up]", next: () => { f.kaneCall = 3; return [{ who: "", text: "[Elias ends the call. The rain keeps talking.]" }]; } },
+    ] },
+  ];
+}
+function wrenHub(): Line[] {
+  const f = G.flags; const ch: Choice[] = [];
+  const hatch = (): Line[] => [{ who: "WREN", text: "The front of the pump house is welded. The vans come at low tide and go in through the hatch at the end of the pier, under the boards." }, { who: "WREN", text: "Take a bird. This one has a number I like.", act: () => { f.hatch = 1; f.wrenTold = 1; give("bird"); } }, ...wrenPromise()];
+  if (has("photo") && !f.wrenTold) ch.push({ label: "Show her Mara's photograph", next: () => { f.vPhoto = 1; return [E("Have you seen this woman?"), { who: "WREN", text: "...The singing lady. She was in the pod next to mine, before they let me go. She hummed so we wouldn't be scared." }, { who: "WREN", text: "They took her down again. Last week. She was still humming." }, ...hatch()]; } });
+  if (!f.wrenTold) ch.push({ label: "I'm looking for Lab 7.", next: () => [E("I'm looking for Lab 7."), { who: "WREN", text: "Everybody here came out of Lab 7. Nobody goes back in on purpose." }, ...hatch()] });
+  if (!f.wrenBirds) ch.push({ label: "What are the birds?", next: () => { f.wrenBirds = 1; return [{ who: "WREN", text: "Old forms from the lab. Intake papers. I fold them so they fly instead of filing." }, ...wrenHub()]; } });
+  ch.push({ label: "I should go.", next: () => [{ who: "WREN", text: "Mind the gulls. They steal names." }] });
+  return [{ who: "WREN", text: f.wrenTold ? "Back again? Sit. Mind the birds." : "You walk like someone who remembers things. Sit. Mind the birds.", choices: ch }];
+}
+function wrenPromise(): Line[] {
+  const f = G.flags;
+  return [{ who: "WREN", text: "Will you remember me? After?", choices: [
+    { label: "I promise.", next: () => { f.wrenPromise = 1; return [E("I promise."), { who: "WREN", text: "Nobody's promised me anything since my first birthday. I was nine minutes old." }]; } },
+    { label: "I don't make promises anymore.", next: () => { f.wrenPromise = -1; return [E("I don't make promises anymore."), { who: "WREN", text: "That's alright. I'll remember you instead. I'm good at it now." }]; } },
+  ] }];
+}
+function keypad(): Line[] {
+  const f = G.flags;
+  const tryC = (c: string): Line[] => {
+    if (c === "0706") return [{ who: "", text: "[The keypad chirps. Bolts thunk under the boards. The hatch lifts on a breath of cold air.]", act: () => { f.codeOk = 1; tone(880, 0.12, "sine", 0.05, 0, 0); tone(1320, 0.2, "sine", 0.05, 0.12, 0); noiseHit(0.5, 200, 0.2); } }, E("Lab 7. Unit 6. Mara.")];
+    const hint = !has("manifest") ? "I'm guessing. Something on this pier must give the code away." : !has("bird") ? "Lab number, then unit number. But which unit?" : "Lab 07. And the unit on Wren's bird... M-06.";
+    return [{ who: "", text: "[BZZT. ACCESS DENIED.]", act: () => { f.codeTry = (f.codeTry ?? 0) + 1; tone(140, 0.3, "square", 0.05, 0, 0); } }, E(hint)];
+  };
+  return [{ who: "KEYPAD", text: "AURELION SERVICE ACCESS. ENTER 4-DIGIT CODE.", choices: [
+    { label: "0706", next: () => tryC("0706") }, { label: "0607", next: () => tryC("0607") }, { label: "2190", next: () => tryC("2190") }, { label: "Step back", next: () => [] },
+  ] }];
+}
+function archHub(): Line[] {
+  const f = G.flags; const ch: Choice[] = [];
+  ch.push({ label: "Log: Project Sunlight", next: () => { f.arch1 = 1; return [{ who: "ARCHIVE", text: "PROJECT SUNLIGHT. Status: ACTIVE. Clients: Halcyon Tower residences. Product: companion synthetics with continuous donor memory." }, E("Donor memory. Whose?"), ...archHub()]; } });
+  ch.push({ label: "Log: M batch", next: () => { f.arch2 = 1; return [{ who: "ARCHIVE", text: "M BATCH: 6 units. M-01 to M-05 dormant. M-06: RECALL. Note: unit repeatedly attempts to leave. Destination always Tidewater Pier." }, E(has("tape") ? "'Move the M batch before the rain stops.' The drone recording. This is what they meant." : "Always the pier. Our pier."), ...archHub()]; } });
+  if (has("tape") || f.askVale || has("manifest")) {
+    if (!has("valelog")) ch.push({ label: "Voice memo [V. VALE]", next: () => [{ who: "ARCHIVE", text: "Decrypting with matching evidence... memo unlocked." }, ...valeLog(), { who: "", text: "[Elias copies the memo to his phone.]", act: () => { give("valelog"); } }, ...archHub()] });
+  } else ch.push({ label: "Voice memo [ENCRYPTED]", next: () => [{ who: "ARCHIVE", text: "ENCRYPTED. Key phrase required." }, E("I don't know enough yet. Somebody up there mentioned Vale... I should have listened."), ...archHub()] });
+  ch.push({ label: "Log off", next: () => [] });
+  return [{ who: "ARCHIVE", text: "AURELION MEMORY ARCHIVE · LAB 7. 41,906 records.", choices: ch }];
+}
+function valeLog(): Line[] {
+  return [{ who: "", text: "[Recording. A tired woman's voice, close to the mic.]" }, V("Personal log. They want M-06 wiped again. Fourth time. She keeps asking for someone called Elias."), V("I told the board memories aren't wallpaper. You can't paint over a person and call it a new room."), V("If anyone finds this: the archive keeps everything. Even the parts of us we sold.")];
+}
+function archCheck(): void {
+  if (G.obj === 7 && has("ribbon") && has("valelog") && has("indexcard")) {
+    complete(7); G.flags.valeIn = 1;
+    say([{ who: "", text: "[Footsteps in the water behind him. A lamp clicks on.]" }, V("Put the card back, Mr. Voss. Some of what's in that drawer is you.")], null, false);
+  }
+}
+function valeHub(): Line[] {
+  const f = G.flags; const o: Choice[] = [];
+  if (has("tape") && !f.vTape) o.push({ label: "Your voice is on a patrol drone.", next: () => { f.vTape = 1; return [E("'Vale wants the M batch moved before the rain stops.' That was about you."), V("I was ordered to move them. I moved them here, where AURELION had forgotten to look. Five of them. They found the sixth."), ...valeHub()]; } });
+  if (has("ribbon") && !f.vRib) o.push({ label: "This was caught in pod M-06.", next: () => { f.vRib = 1; return [E("A red ribbon. Caught in the seal of pod M-06."), V("Mara's. The original's. AURELION archived everything she owned, so the copies would feel right in their own skin."), ...valeHub()]; } });
+  if (has("indexcard") && !f.vCard) o.push({ label: "Why is my name in your archive?", next: () => { f.vCard = 1; return [E("Why does your archive have a card with my name on it?"), V("Because you were the first thing she remembered, and the last thing we could erase. Template E-01."), E("What does that mean?"), V("Not here. Not tonight. Ask Kane what he signed six years ago."), ...valeHub()]; } });
+  if (has("kane") && !f.vKane) o.push({ label: "Detective Kane warned me off.", next: () => { f.vKane = 1; return [E("Detective Kane warned me off."), V("Kane closed Mara's file himself, the night of the flood. If he's warning you now, he's frightened. Kane is never frightened."), ...valeHub()]; } });
+  if (f.kaneCall && !f.vCall) o.push({ label: "Kane called me on the way here.", next: () => { f.vCall = 1; return [E("Kane called me on the pier."), V(f.kaneCall === 2 ? "You told him about Lab 7? Then AURELION knows too. We have less time than I hoped." : f.kaneCall === 3 ? "And you hung up on him. Good. He'd only have lied to you kindly." : "Whatever you told him, it wasn't the truth. Good."), ...valeHub()]; } });
+  o.push({ label: "What is the AURELION experiment?", next: () => [E("No more pieces, Doctor. What did AURELION do here?"), V("Better if you see it. The archive can still play my old reels."), { who: "", text: "[Vale turns the archive projector toward the pods.]", act: () => { f.valeMet = 1; } }] });
+  const first = !f.valeMet0; f.valeMet0 = 1;
+  return [{ who: "DR. VALE", text: first ? "Dr. Vale. Former AURELION, Memory Division. I've been living down here with my work since the flood. Ask what you came to ask." : "What else, Mr. Voss?", choices: o }];
+}
+function valeDone(): void { if (G.flags.valeMet && G.obj === 8 && G.scene === "play") startVision(); }
+function startVision(): void { G.scene = "vis"; G.sceneT = 0; G.dlg = null; setMood("vision"); G.rev++; noiseHit(0.6, 2400, 0.12); }
+function endVision(): void {
+  const f = G.flags;
+  G.scene = "play"; G.sceneT = 0; G.fade = 1; setMood("lab"); complete(8); G.notes.push("THE AURELION EXPERIMENT: Project Sunlight. Mara's memories poured into the M batch synthetics and sold to Halcyon Tower. Every copy remembers Elias, so AURELION wipes them, again and again."); G.rev++;
+  say([
+    V("That's the experiment. Project Sunlight. When Mara died, AURELION kept her memories and poured them into synthetics, the M batch. Gentle, loyal companions for the towers above the cloud line, where there's still sun."),
+    V("But every copy wakes up remembering you. Every one of them tries to come home to the pier. So they wipe her. Again and again."),
+    { who: "", text: "[Overhead, the pier groans. Rotor noise. A searchlight leaks through the hatch.]", act: () => { siren(); noiseHit(1.2, 120, 0.25); } },
+    V("AURELION surveillance. They've seen the hatch open. You need to get out of the light, Mr. Voss."),
+    { who: "DR. VALE", text: "Go. Now.", choices: [
+      { label: "Come with me, Vale.", next: () => { f.valeTrust = 1; return [E("Come with me, Vale."), V("I'll follow when the drones pass. Find Kane before they do. He knows what you are.")]; } },
+      { label: "You did this to her.", next: () => { f.valeTrust = -1; return [E("You did this to her."), V("Yes. And I'll spend whatever is left of me undoing it. Go.")]; } },
+    ] },
+  ], finishM2, true);
+}
+function finishM2(): void {
+  const f = G.flags; f.m2done = 1; G.scene = "end"; G.sceneT = 0; setMood("glitch");
+  G.banner = { a: "MISSION 003: A CITY WITHOUT SUNLIGHT", b: "unlocked", t: 0 };
+  G.notes.push("Mission 002 complete. AURELION drones are sweeping the pier. Next: escape the surveillance, find Detective Kane, and find out who Elias really is." + (f.wrenPromise === 1 ? " (You promised Wren you'd remember her.)" : ""));
+  chime(); saveGame(true); G.rev++;
+}
+function startM2(): void {
+  const keepItems = G.items.filter((id: string) => !M2ITEMS.includes(id));
+  for (const k of M2FLAGS) delete G.flags[k];
+  G.items = keepItems; if (!has("chip")) G.items.push("chip");
+  G.obj = M1N; G.m2 = true; G.panel = "none"; G.dlg = null; G.scene = "play";
+  G.banner = { a: "MISSION 002: THE FORGOTTEN ONES", b: OBJ[M1N] ?? "", t: 0 };
+  go("market", 700); G.rev++;
+}
+function visionText(T: number): string {
+  const L = ["PROJECT SUNLIGHT · AURELION MEMORY DIVISION · LAB 7", "VALE: When Mara died, we kept everything. Every laugh. Every song.", "VALE: We poured her into synthetics. Six of them. The M batch.", "VALE: Sold to the towers above the clouds. Where there's still sun.", "VALE: But she kept remembering one man. She kept walking home to the pier.", "VALE: To you, Elias."];
+  return L[clamp(Math.floor(T / 2.6), 0, L.length - 1)] ?? "";
+}
+function renderVision(b: Ctx, T: number): void {
+  const t = G.t;
+  R(b, 0, 0, W, H, "#020809");
+  const g = b.createRadialGradient(W / 2, H / 2, 10, W / 2, H / 2, W * 0.7); g.addColorStop(0, "rgba(40,120,110,0.5)"); g.addColorStop(1, "rgba(0,0,0,0)"); b.fillStyle = g; b.fillRect(0, 0, W, H);
+  const ph = Math.floor(T / 2.6);
+  for (let y = 0; y < H; y += 2) R(b, 0, y, W, 1, "rgba(0,0,0,0.25)");
+  const fig = (x: number, y: number, s: number, a: number, col: string): void => { b.globalAlpha = a; R(b, x - 3 * s, y - 22 * s, 6 * s, 6 * s, col); R(b, x - 4 * s, y - 16 * s, 8 * s, 16 * s, col); R(b, x - 4 * s, y - 23 * s, 8 * s, 3 * s, "#3a1a1a"); R(b, x + 3 * s, y - 20 * s, 2 * s, 6 * s, "#ff3a4a"); b.globalAlpha = 1; };
+  if (ph <= 1) { const a = clamp(T / 2, 0, 1); fig(W / 2, 128, 2, a, "#e8d8c8"); for (let k = 0; k < 40; k++) { const p = (t * 0.4 + k / 40) % 1; R(b, W / 2 + Math.sin(k * 2.3) * 60 * (1 - p), 40 + p * 90, 1, 1, "#ffd27a"); } }
+  if (ph === 2) for (let i = 0; i < 6; i++) { const x = 40 + i * 48; R(b, x - 10, 60, 22, 80, "#0c3234"); R(b, x - 10, 60, 22, 1, "#5ff0d8"); fig(x, 134, 1.6, clamp((T - 5.2) * 2 - i * 0.3, 0, 1) * 0.8, "#7ae0d0"); }
+  if (ph === 3) { R(b, 0, 0, W, 50, "#0a1418"); glow(b, W / 2, 20, 90, "255,200,110", 0.9); for (let k = 0; k < 8; k++) R(b, k * 44 - 10 + Math.sin(t + k) * 4, 50 + (k % 2) * 3, 50, 4, "#6a8a90"); R(b, W / 2 - 14, 54, 28, 126, "#0a1820"); for (let k = 0; k < 6; k++) fig(W / 2 - 50 + k * 20, 70 + (k % 2) * 4, 0.6, 0.7, "#e8d8c8"); }
+  if (ph === 4) { R(b, 0, 130, W, 50, "#06141a"); R(b, 0, 128, W, 2, "#3a2a1c"); const x = 30 + ((T - 10.4) / 2.6) * (W - 60); for (let k = 0; k < 6; k++) fig(x - k * 14, 128, 1.2, 0.8 - k * 0.12, "#7ae0d0"); }
+  if (ph >= 5) { fig(W / 2 - 30, 128, 2, 0.9, "#7ae0d0"); b.globalAlpha = 0.9; R(b, W / 2 + 24, 86, 12, 12, "#d8b8a0"); R(b, W / 2 + 22, 98, 16, 32, "#2a2a30"); R(b, W / 2 + 22, 84, 16, 4, "#2a2018"); b.globalAlpha = 1; glow(b, W / 2, 110, 60, "255,111,154", 0.25 + 0.15 * Math.sin(t * 2)); }
+  if (h1(Math.floor(t * 14)) > 0.85) { b.globalAlpha = 0.35; R(b, 0, Math.floor(h1(t) * H), W, 6, "#5ff0d8"); b.globalAlpha = 1; }
+}
+
 const TALK: Record<string, (n: Npc) => Line[]> = {
+  sol: () => {
+    const f = G.flags; const first = !f.solMet; f.solMet = 1;
+    const o: Line[] = first ? [{ who: "SOL", text: "Warm your hands or walk on, stranger. The pier doesn't do visitors." }] : [{ who: "SOL", text: "Still dry? Then you're not looking hard enough." }];
+    if (first && has("bead")) o.push(E("Nova sent me."), { who: "SOL", text: "Her bead. ...Alright. Nova's word is good down here. Sit, if you like the smoke." });
+    else if (first) o.push({ who: "SOL", text: "Coat like that, walk like that. Police, once. We don't talk to police. Not anymore." });
+    return [...o, { who: "SOL", text: "What do you want?", choices: [
+      { label: "The tally board. What are you counting?", next: () => { f.solTally = 1; return [E("What are you counting?"), { who: "SOL", text: "Days since they wiped me and left me on these boards. Two thousand one hundred and ninety. The flood was the same week." }, { who: "SOL", text: "Six years. Funny. Everybody down here starts counting from the same week." }]; } },
+      { label: "Who are the Forgotten?", next: () => [E("Who are the Forgotten?"), { who: "SOL", text: "Synthetics nobody remembers buying. AURELION took back what we knew and kept the bodies cheap. We keep each other." }] },
+      { label: "Where's the old pump house?", next: () => [E("Where's the old pump house?"), { who: "SOL", text: "End of the pier. Front's welded. Ask Wren, with the paper birds. She sees everything that comes and goes." }] },
+    ] }];
+  },
+  juno: () => {
+    const f = G.flags; const o: Choice[] = [];
+    if (!f.skewer) o.push({ label: "One skewer. (4 credits)", next: () => { if (!pay(4)) return [{ who: "JUNO", text: "Four credits, love. I don't run a charity, I run a grill." }]; f.skewer = 1; return [{ who: "JUNO", text: "Mostly protein. Don't ask which kind. Eat it while it's warm." }, E("...It's actually good."), { who: "JUNO", text: "Course it is. Now. You want gossip as well, or just the stick?" }]; } });
+    if (!f.junoVans) o.push({ label: "Seen any AURELION vans?", next: () => { f.junoVans = 1; return [E("Seen any AURELION vans?"), { who: "JUNO", text: "White ones, no plates, low tide. They park by the crates and go down under the boards. The pump house end." }, { who: "JUNO", text: "And they leave a trail. Blue drips. Coolant. Synthetic blood, if you're being poetic." }]; } });
+    o.push({ label: "Just warming up.", next: () => [{ who: "JUNO", text: "Warm all you like. Smell's free." }] });
+    return [{ who: "JUNO", text: f.junoAsk ? "Back for seconds?" : "Skewers! You look like a man who forgot dinner a few years running.", act: () => { f.junoAsk = 1; }, choices: o }];
+  },
+  wren: () => wrenHub(),
+  vale: () => valeHub(),
   nova: () => {
     const f = G.flags;
+    if (G.obj >= M1N) return novaM2();
     if (has("chip")) return [{ who: "NOVA", text: f.novaTone === 1 ? "Go easy with that chip, Elias. Memories bite." : f.novaTone === -1 ? "We're done, detective. Shop's closed for you." : "Read it somewhere quiet. Or don't. Your call." }];
     if (!f.metNova) return [
       { who: "NOVA", text: "You're dripping on my merchandise, detective.", act: () => { f.metNova = 1; } },
@@ -1472,16 +2091,32 @@ const SPOTS: Spot[] = [
   { id: "stairs", loc: "district", x: 1250, y: 120, kind: "ENTER", label: "Stairs down", show: () => !!G.flags.market, use: () => go("market", 52) },
   { id: "up", loc: "market", x: 34, y: 104, kind: "ENTER", label: "Stairs up", show: () => true, use: () => go("district", 1236) },
   { id: "cr2", loc: "market", x: 262, y: 146, kind: "COLLECT", label: "Credit chip", show: () => !G.flags.cr2, use: () => { G.flags.cr2 = 1; G.credits += 10; toast("+10 credits"); coin(); } },
+  { id: "pgate", loc: "district", x: 1340, y: 112, kind: "ENTER", label: "Seawall gate", show: () => G.obj >= M1N && !!G.flags.knowLab, use: () => go("pier", 40) },
+  { id: "pgate0", loc: "district", x: 1340, y: 112, kind: "EXAMINE", label: "Seawall gate", show: () => !(G.obj >= M1N && G.flags.knowLab), use: () => say([E("The seawall gate. Tidewater Pier is on the other side. Nobody goes out there anymore. Nobody I know, anyway.")], null, false) },
+  { id: "pback", loc: "pier", x: 22, y: 112, kind: "ENTER", label: "Kessler Street", show: () => true, use: () => go("district", 1328) },
+  { id: "tally", loc: "pier", x: 206, y: 120, kind: "EXAMINE", label: "Tally board", show: () => true, use: () => say([E(G.flags.solTally ? "Two thousand one hundred and ninety marks. Six years. The same six years I've been counting." : "Hundreds of chalk marks in neat bundles of five. Somebody has been counting days for a long time.")], () => { G.flags.tally = 1; }, false) },
+  { id: "coolant", loc: "pier", x: 760, y: 150, kind: "EXAMINE", label: "Blue drips", show: () => !G.flags.coolant, use: () => say([E("Blue drops on the boards. Synthetic coolant, still bright. Somebody bled their way along this pier."), E("The trail runs under the planks, toward the pump house.")], () => { G.flags.coolant = 1; G.flags.hatch = 1; G.rev++; }, false) },
+  { id: "crates", loc: "pier", x: 872, y: 140, kind: "EXAMINE", label: "AURELION crates", show: () => !has("manifest"), use: () => say([E("AURELION crates, fresh paint, old rain. The manifest is stencilled on the side."), { who: "", text: "M BATCH · 6 UNITS · SERVICE ACCESS = LAB NO. + UNIT NO." }], () => give("manifest"), false) },
+  { id: "sign", loc: "pier", x: 1000, y: 92, kind: "EXAMINE", label: "Pump Station 7", show: () => true, use: () => say([E(G.obj === M1N ? "Pump Station 7. Seven. Lab 7. AURELION hid its laboratory in a pump house nobody remembered." : "Pump Station 7. Lab 7 is under my feet.")], () => { G.flags.sign = 1; complete(M1N); }, false) },
+  { id: "pdoor", loc: "pier", x: 1032, y: 120, kind: "EXAMINE", label: "Welded door", show: () => true, use: () => say([E("Welded shut, a long time ago. Fresh scratches around the frame though. Somebody else tried.")], () => { G.flags.doorSeen = 1; if (G.obj === M1N) { G.flags.sign = 1; complete(M1N); } }, false) },
+  { id: "hatch", loc: "pier", x: 1072, y: 150, kind: "ACCESS", label: "Service hatch", show: () => G.obj > M1N && (!!G.flags.hatch || !!G.flags.codeOk), use: () => { if (G.flags.codeOk) go("lab", 40); else say(keypad(), () => { if (G.flags.codeOk) go("lab", 40); }, false); } },
+  { id: "hatch0", loc: "pier", x: 1072, y: 150, kind: "EXAMINE", label: "Boards", show: () => !(G.obj > M1N && (G.flags.hatch || G.flags.codeOk)), use: () => say([E("Loose boards and cold air coming up through them. There's something underneath.")], null, false) },
+  { id: "ladder", loc: "lab", x: 30, y: 100, kind: "ENTER", label: "Ladder up", show: () => true, use: () => go("pier", 1064) },
+  { id: "pods", loc: "lab", x: 140, y: 110, kind: "EXAMINE", label: "Memory pods", show: () => true, use: () => say([E("Pods M-01 to M-05. Someone is asleep in each one. The same face, five times. I know that face."), E("...Mara.")], () => { G.flags.podsSeen = 1; }, true) },
+  { id: "pod6", loc: "lab", x: 218, y: 110, kind: "EXAMINE", label: "Pod M-06", show: () => !has("ribbon"), use: () => say([E("M-06 is open and empty. The seal is torn from the inside."), E("A red ribbon, caught in the hinge.")], () => { give("ribbon"); archCheck(); }, true) },
+  { id: "arch", loc: "lab", x: 333, y: 120, kind: "ACCESS", label: "Memory archive", show: () => true, use: () => say(archHub(), archCheck, false) },
+  { id: "drawers", loc: "lab", x: 386, y: 120, kind: "EXAMINE", label: "Index drawers", show: () => !has("indexcard"), use: () => say([E("Index drawers. Thousands of cards, alphabetical. V... Voss."), E("VOSS, ELIAS. TEMPLATE E-01. STATUS: ACTIVE. ...Active?")], () => { give("indexcard"); archCheck(); }, true) },
   { id: "reader", loc: "market", x: 636, y: 100, kind: "ACCESS", label: "Memory reader", show: () => has("chip"), use: () => { if (G.obj === 4) startGlitch(); else say([E("The reader hums. I've seen enough for one night.")], null, false); } },
 ];
 const PLATS: Record<LocId, { x0: number; x1: number; y: number }[]> = {
+  pier: [{ x0: 852, x1: 892, y: 146 }], lab: [],
   apt: [{ x0: 198, x1: 262, y: 146 }], district: [{ x0: 300, x1: 322, y: 146 }, { x0: 1118, x1: 1162, y: 138 }], market: [{ x0: 470, x1: 500, y: 146 }],
 };
 
 function targets(): Target[] {
   const out: Target[] = [];
   for (const s of SPOTS) if (s.loc === G.loc && s.show()) out.push({ id: s.id, x: s.x, y: s.y, kind: s.kind, label: s.label, use: s.use });
-  for (const n of G.npcs) if (n.loc === G.loc) out.push({ id: n.id, x: n.x, y: n.y - n.look.h - 14, kind: "SPEAK", label: n.name, use: () => talkNpc(n), walker: n.speed > 0 });
+  for (const n of G.npcs) if (onNpc(n)) out.push({ id: n.id, x: n.x, y: n.y - n.look.h - 14, kind: "SPEAK", label: n.name, use: () => talkNpc(n), walker: n.speed > 0 });
   return out;
 }
 function nearest(): Target | null {
@@ -1494,15 +2129,16 @@ function talkNpc(n: Npc): void {
   n.wait = 4; n.peek = 0; n.bubbleT = 0; n.dir = G.px > n.x ? 1 : -1;
   const f = TALK[n.id]; if (!f) return;
   const lines = f(n); n.met = true;
-  say(lines, null, n.id === "nova");
+  say(lines, n.id === "vale" ? valeDone : null, n.id === "nova" || n.id === "vale");
 }
 function startGlitch(): void {
   G.scene = "glitch"; G.sceneT = 0; G.dlg = null; setMood("glitch"); G.rev++;
   for (let k = 0; k < 6; k++) setTimeout(() => noiseHit(0.25, 3000, 0.2), k * 400 + Math.random() * 300);
 }
 function endGlitch(): void {
-  G.scene = "end"; G.sceneT = 0; complete(4); G.m2 = true; setMood("market");
-  G.banner = { a: "MISSION 002: THE FORGOTTEN ONES", b: "unlocked", t: 0 }; G.notes.push("The chip showed AURELION labs, Dr. Vale, and Mara in the rain. Mission 002 unlocked."); chime(); saveGame(true); G.rev++;
+  G.scene = "play"; G.sceneT = 0; complete(4); G.m2 = true; setMood("market"); G.fade = 1;
+  G.banner = { a: "MISSION 002: THE FORGOTTEN ONES", b: OBJ[M1N] ?? "", t: 0 };
+  say([E("Lab 7. Dr. Vale. Mara, telling me not to trust the rain."), E("Nova knows this market better than anyone. She'll know where AURELION hides its labs.")], null, false); G.notes.push("The chip showed AURELION labs, Dr. Vale, and Mara in the rain. Mission 002 unlocked."); chime(); saveGame(true); G.rev++;
 }
 const CALL: Line[] = [
   { who: "UNKNOWN CALLER", text: "We found something." },
@@ -1566,7 +2202,7 @@ function update(dt: number): void {
   g.flash = Math.max(0, g.flash - dt * 2.5);
   if (g.toast) { g.toast.t += dt; if (g.toast.t > 3) { g.toast = null; g.rev++; } }
   if (g.banner) { g.banner.t += dt; if (g.banner.t > 4.5) g.banner = null; }
-  if ((g.scene === "menu" || (g.scene === "play" && g.loc === "district")) && Math.random() < dt / 28) siren();
+  if ((g.scene === "menu" || (g.scene === "play" && (g.loc === "district" || g.loc === "pier"))) && Math.random() < dt / 28) siren();
   if (g.scene === "menu") { g.jumpQ = false; g.actQ = false; return; }
   if (g.scene === "cut") {
     const T = g.sceneT;
@@ -1582,11 +2218,15 @@ function update(dt: number): void {
     if (g.sceneT > 12.5 || (g.actQ && g.sceneT > 1.5)) endGlitch();
     g.actQ = false; g.jumpQ = false; return;
   }
-  updPeds(dt);
+  if (g.scene === "vis") {
+    if (g.sceneT > 16 || (g.actQ && g.sceneT > 2)) endVision();
+    g.actQ = false; g.jumpQ = false; return;
+  }
+  updPeds(dt); updLife(dt);
   // npcs
   for (const n of g.npcs) {
     if (n.bubbleT > 0) n.bubbleT -= dt;
-    if (n.loc !== g.loc) continue;
+    if (!onNpc(n)) continue;
     if (n.barkCd > 0) n.barkCd -= dt;
     else if (!g.dlg && !g.chat && n.barks.length > 0 && Math.abs(n.x - g.px) < 56 && n.bubbleT <= 0) { n.bubble = pickR(n.barks); n.bubbleT = 2.6; n.barkCd = 9 + Math.random() * 8; }
     if (n.speed === 0) continue;
@@ -1605,7 +2245,7 @@ function update(dt: number): void {
   } else {
     g.chatCd -= dt;
     if (g.chatCd <= 0) {
-      const w = g.npcs.filter((n: Npc) => n.loc === g.loc && n.speed > 0);
+      const w = g.npcs.filter((n: Npc) => onNpc(n) && n.speed > 0);
       for (let i = 0; i < w.length && !g.chat; i++) for (let j = i + 1; j < w.length; j++) {
         const a = w[i]; const b = w[j];
         if (a && b && Math.abs(a.x - b.x) < 18) { a.wait = 6.5; b.wait = 6.5; a.dir = b.x > a.x ? 1 : -1; b.dir = -a.dir; g.chat = { a, b, l: CHATS[Math.floor(Math.random() * CHATS.length)] ?? ["...", "..."], t: 0 }; break; }
@@ -1617,7 +2257,7 @@ function update(dt: number): void {
   const LW = LOCW[g.loc];
   g.lookX += (g.facing * 16 - g.lookX) * Math.min(1, dt * 1.6);
   g.cam += (clamp(g.px + g.lookX - W / 2, 0, LW - W) - g.cam) * Math.min(1, dt * 4.5);
-  if (g.loc === "district") {
+  if (g.loc === "district" || g.loc === "pier") {
     if (g.fly) {
       const f = g.fly; f.x += f.dir * f.speed * dt;
       if (!f.snd && f.x > g.cam - 40 && f.x < g.cam + W + 40) { f.snd = true; whoosh(f.dir); }
@@ -1626,7 +2266,7 @@ function update(dt: number): void {
   } else g.fly = null;
   if (g.loc === "apt") { const was = g.sweep; g.sweep -= dt; if (was >= 0 && g.sweep < 0) noiseHit(1.6, 700, 0.05, "bandpass", true); if (g.sweep < -2.2) g.sweep = 7 + Math.random() * 7; }
   g.sndT -= dt;
-  if (g.sndT <= 0 && SND) { g.sndT = 0.25; let sv = 0; if (g.loc === "district") for (const vx of [332, 846]) sv = Math.max(sv, 1 - Math.abs(g.px - vx) / 90); SND.steam.gain.setTargetAtTime(Math.max(0, sv) * 0.14, SND.ctx.currentTime, 0.2); pedAudio(); }
+  if (g.sndT <= 0 && SND) { g.sndT = 0.25; let sv = 0; for (const vx of g.loc === "district" ? [332, 846] : g.loc === "pier" ? [480, 940] : g.loc === "market" ? [600] : []) sv = Math.max(sv, 1 - Math.abs(g.px - vx) / 90); SND.steam.gain.setTargetAtTime(Math.max(0, sv) * 0.14, SND.ctx.currentTime, 0.2); pedAudio(); adTick(0.25); pierAmb(); }
   if (g.scene === "end") { g.actQ = false; g.jumpQ = false; return; }
   const talking = !!g.dlg;
   if (talking) dlgTick(dt);
@@ -1667,6 +2307,8 @@ function update(dt: number): void {
   if (g.loc === "district" && g.obj === 1 && g.px > 1000) complete(1);
   if (g.scene === "play" && g.fadeTo === 0) syncObj(false);
   if (busy) return;
+  if (g.loc === "pier" && g.scene === "play" && g.obj >= M1N && !g.flags.kaneRang && g.px > 90) { g.flags.kaneRang = 1; ring(); say(kaneCallLines(), null, true); return; }
+  if (g.loc === "pier" && g.scene === "play" && g.obj === M1N && g.px > 950) { say([E("PUMP STATION 7. Seven. AURELION hid Lab 7 in a pump house nobody remembered.")], () => { G.flags.sign = 1; complete(M1N); }, false); return; }
   const n = nearest(); const nid = n ? n.id : "";
   if (nid !== g.near) { g.near = nid; g.rev++; }
   if (g.actQ) {
@@ -1677,12 +2319,12 @@ function update(dt: number): void {
 }
 
 // ---------- render ----------
-type Caches = { far: HTMLCanvasElement; mid: HTMLCanvasElement; apt: HTMLCanvasElement; dist: HTMLCanvasElement; mkt: HTMLCanvasElement; mktB: HTMLCanvasElement; haze: HTMLCanvasElement; bokD: HTMLCanvasElement; bokM: HTMLCanvasElement; bokA: HTMLCanvasElement; topD: HTMLCanvasElement; topM: HTMLCanvasElement };
+type Caches = { far: HTMLCanvasElement; mid: HTMLCanvasElement; apt: HTMLCanvasElement; dist: HTMLCanvasElement; mkt: HTMLCanvasElement; mktB: HTMLCanvasElement; haze: HTMLCanvasElement; bokD: HTMLCanvasElement; bokM: HTMLCanvasElement; bokA: HTMLCanvasElement; topD: HTMLCanvasElement; topM: HTMLCanvasElement; pier: HTMLCanvasElement; lab: HTMLCanvasElement; bokP: HTMLCanvasElement };
 function makeCaches(mk: (w: number, h: number) => HTMLCanvasElement): Caches {
-  const cc: Caches = { far: mk(FW, H), mid: mk(MW, H), apt: mk(360, H), dist: mk(1400, H), mkt: mk(900, H), mktB: mk(KW, H), haze: mk(HW, H), bokD: mk(Math.ceil(1400 * 1.3) + 400, 60), bokM: mk(Math.ceil(900 * 1.3) + 400, 30), bokA: mk(Math.ceil(360 * 1.3) + 400, 28), topD: mk(Math.ceil(1400 * 1.2) + 400, 96), topM: mk(Math.ceil(900 * 1.2) + 400, 48) };
+  const cc: Caches = { far: mk(FW, H), mid: mk(MW, H), apt: mk(360, H), dist: mk(1400, H), mkt: mk(900, H), mktB: mk(KW, H), haze: mk(HW, H), bokD: mk(Math.ceil(1400 * 1.3) + 400, 60), bokM: mk(Math.ceil(900 * 1.3) + 400, 30), bokA: mk(Math.ceil(360 * 1.3) + 400, 28), topD: mk(Math.ceil(1400 * 1.2) + 400, 96), topM: mk(Math.ceil(900 * 1.2) + 400, 48), pier: mk(1100, H), lab: mk(520, H), bokP: mk(Math.ceil(1100 * 1.3) + 400, 40) };
   const bk = (e: HTMLCanvasElement, fn: (c: Ctx) => void): void => { const x = e.getContext("2d"); if (x) fn(x); };
   bk(cc.far, bakeFar); bk(cc.mid, bakeMid); bk(cc.apt, bakeApt); bk(cc.dist, bakeDistrict); bk(cc.mkt, bakeMarket); bk(cc.mktB, bakeMarketBack);
-  bk(cc.haze, bakeHaze); bk(cc.bokD, (c: Ctx) => bakeBokeh(c, BOK_D, 5)); bk(cc.bokM, (c: Ctx) => bakeBokeh(c, BOK_M, 9)); bk(cc.bokA, (c: Ctx) => bakeBokeh(c, BOK_A, 13)); bk(cc.topD, (c: Ctx) => bakeCanopy(c, 3)); bk(cc.topM, (c: Ctx) => bakeTop(c, 8));
+  bk(cc.haze, bakeHaze); bk(cc.bokD, (c: Ctx) => bakeBokeh(c, BOK_D, 5)); bk(cc.bokM, (c: Ctx) => bakeBokeh(c, BOK_M, 9)); bk(cc.bokA, (c: Ctx) => bakeBokeh(c, BOK_A, 13)); bk(cc.topD, (c: Ctx) => bakeCanopy(c, 3)); bk(cc.topM, (c: Ctx) => bakeTop(c, 8)); bk(cc.pier, bakePier); bk(cc.lab, bakeLab); bk(cc.bokP, (c: Ctx) => bakeBokeh(c, BOK_P, 17));
   return cc;
 }
 function tramX(t: number, midX: number): number { const per = W + 700; return ((((t * 16 - midX) % per) + per) % per) - 260; }
@@ -1768,7 +2410,7 @@ function waterPlane(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasEle
   b.globalAlpha = 1;
   for (let wx = Math.floor(cam / 140) * 140 + 40; wx < cam + W + 20; wx += 140) { const sx = wx - cam; R(b, sx, top, 5, depth, "#04080a"); R(b, sx, top, 1, depth, "#1a2a2e"); }
 }
-function city(b: Ctx, cc: Caches, farX: number, midX: number, t: number, camC: number): void {
+function city(b: Ctx, cc: Caches, farX: number, midX: number, t: number, camC: number, open = false): void {
   const sky = b.createLinearGradient(0, 0, 0, FEET);
   sky.addColorStop(0, "#02060a"); sky.addColorStop(0.5, "#082026"); sky.addColorStop(1, "#164a46");
   b.fillStyle = sky; b.fillRect(0, 0, W, FEET + 1);
@@ -1784,6 +2426,8 @@ function city(b: Ctx, cc: Caches, farX: number, midX: number, t: number, camC: n
   holoKoi(b, t, camC);
   const hz = b.createLinearGradient(0, 40, 0, FEET); hz.addColorStop(0, "rgba(90,150,180,0)"); hz.addColorStop(1, "rgba(120,175,195,0.26)"); b.fillStyle = hz; b.fillRect(0, 40, W, FEET - 40);
   b.drawImage(cc.far, Math.round(farX), 0, W, H, 0, 0, W, H);
+  if (open) tower(b, camC, t);
+  if (G.gfx) for (let k = 0; k < 2; k++) { const y = 44 + k * 8; const sp = k ? -38 : 52; for (let i = 0; i < 5; i++) { const span = W + 80; const x = ((((h1(i * 3.7 + k) * span + t * sp - camC * 0.2) % span) + span) % span) - 40; b.globalAlpha = 0.5; R(b, Math.round(x), y, 6, 1, k ? "#ff6a6a" : "#fff0c8"); b.globalAlpha = 0.18; R(b, Math.round(x) - (k ? -6 : 14), y, 14, 1, k ? "#ff6a6a" : "#fff0c8"); } b.globalAlpha = 1; }
   for (const c of G.cars) {
     const span = W + 60; const raw = c.x - camC * c.layer;
     const sx = Math.round((((raw % span) + span) % span) - 30);
@@ -1794,6 +2438,7 @@ function city(b: Ctx, cc: Caches, farX: number, midX: number, t: number, camC: n
     R(b, fx, y, 1, 1, "#fff6d0"); R(b, bx, y, 1, 1, "#ff5a5a");
     glow(b, fx, y, 7, "255,246,208", 0.7); glow(b, bx, y, 5, "255,80,80", 0.7);
   }
+  if (open) { const fog = b.createLinearGradient(0, 70, 0, FEET); fog.addColorStop(0, "rgba(60,160,140,0)"); fog.addColorStop(1, "rgba(60,150,140,0.36)"); b.fillStyle = fog; b.fillRect(0, 70, W, FEET - 70); return; }
   { const span = W + 260; const bx = ((((300 - camC * 0.3) % span) + span) % span) - 200;
     R(b, bx, 98, 190, 3, "#0d2a30"); R(b, bx, 97, 190, 1, "#2a6a6a"); R(b, bx, 92, 190, 1, "#0d2a30"); for (let k = 0; k < 190; k += 16) R(b, bx + k, 92, 1, 6, "#0d2a30");
     for (let i = 0; i < 10; i++) { const q = (((t * (2 + (i % 3)) * (i % 2 ? 1 : -1)) / 190 + h1(i * 2.1)) % 1 + 1) % 1; R(b, bx + q * 190, 92, 1, 5, "#081a1e"); } }
@@ -1836,7 +2481,7 @@ function eliasState(): string {
 function drawNpcs(b: Ctx, cam: number): void {
   const t = G.t;
   for (const n of G.npcs) {
-    if (n.loc !== G.loc) continue;
+    if (!onNpc(n)) continue;
     const sx = n.x - cam; if (sx < -24 || sx > W + 24) continue;
     const moving = n.speed > 0 && n.wait <= 0;
     const f = n.speed === 0 ? (G.px > n.x ? 1 : -1) : n.wait > 0 && n.peek ? (Math.sin(t * 1.3 + n.x) > 0 ? 1 : -1) : n.dir;
@@ -1853,6 +2498,8 @@ function idleFx(b: Ctx, n: Npc, j: Joints, f: number, t: number): void {
   else if (n.idle === "doze") { const zp = (t * 0.5) % 1; b.globalAlpha = 1 - zp; ptext(b, "Z", Math.round(j.ex) + 3 + Math.round(zp * 5), top - 6 - Math.round(zp * 10), "#cfe8ff", 1); b.globalAlpha = 1; }
   else if (n.idle === "smoke") { const on = Math.sin(t * 0.8) > 0.4; R(b, hx + f, hy - 1, 1, 1, on ? "#ffb04a" : "#6a3a1a"); if (on) glow(b, hx + f, hy - 1, 4, "255,170,80", 0.7); for (let k = 0; k < 3; k++) { const p = (t * 0.4 + k / 3) % 1; b.globalAlpha = 0.25 * (1 - p); R(b, hx + f + Math.round(Math.sin(t + k * 2) * 2), hy - 3 - p * 14, 2, 1, "#c8d8d8"); } b.globalAlpha = 1; }
   else if (n.idle === "scan" && n.wait > 0) { b.save(); b.globalCompositeOperation = "lighter"; b.globalAlpha = 0.12; b.fillStyle = "#e8f4ff"; b.beginPath(); b.moveTo(hx, hy); b.lineTo(hx + f * 44, FEET); b.lineTo(hx + f * 16, FEET); b.closePath(); b.fill(); b.restore(); R(b, hx - 1, hy, 2, 1, "#ffffff"); }
+  else if (n.idle === "fold") { const fl = Math.sin(t * 2.2) > 0; R(b, hx - 2, hy - 1, 4, fl ? 2 : 1, "#f0ece4"); if (fl) R(b, hx, hy - 2, 1, 1, "#f0ece4"); }
+  else if (n.idle === "warm") { glow(b, hx, hy, 6, "255,150,70", 0.35 + 0.15 * h1(Math.floor(t * 10))); }
   else if (n.idle === "wrist" && n.wait > 0) { R(b, hx - 1, hy, 2, 1, "#3df5d0"); glow(b, hx, hy, 5, "61,245,208", 0.6); }
 }
 // ---------- window holo-ads (apartment view) ----------
@@ -1960,6 +2607,9 @@ function drawApt(b: Ctx, cc: Caches, cam: number, seated: boolean): void {
 }
 function drawDistrictDyn(b: Ctx, cam: number): void {
   const t = G.t; const S = (x: number): number => Math.round(x - cam);
+  winLife(b, cam, t, DWINS);
+  { const gx = S(1330); if (gx > -40 && gx < W + 10) { R(b, gx, 104, 26, 56, "#1a2224"); R(b, gx, 104, 26, 2, "#3a4a4e"); for (let k = 3; k < 26; k += 4) R(b, gx + k, 108, 1, 52, "#0c1214"); R(b, gx + 2, 96, 22, 8, "#141c1e"); ptext(b, "PIER", gx + 5, 98, G.flags.knowLab ? "#ffd27a" : "#4a6a6a", 1); if (G.flags.knowLab) glow(b, gx + 13, 100, 12, "255,200,120", 0.4); } }
+  hangSign(b, S(470), 104, "OPEN", "#ff6f9a", t, 41); hangSign(b, S(1086), 100, "BAR", "#7affc0", t, 43);
   neon(b, "HIRO BOWL", S(183), 85, "#ff8a6a", t, 3, 1);
   neon(b, "PIX REPAIR", S(399), 96, "#5ff0d8", t, 5, 1);
   neon(b, "LUCKY 9", S(677), 99, "#ffb04a", t, 7, 1);
@@ -2053,6 +2703,7 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
   const g = G; const t = g.t;
   if (g.scene === "menu") { const c = t * 22; city(b, cc, tri(c * 0.15, FW - W - 2), tri(c * 0.45, MW - W - 2), t, c); rain(b, 1); return; }
   if (g.scene === "glitch") { renderGlitch(b, g.sceneT); return; }
+  if (g.scene === "vis") { renderVision(b, g.sceneT); return; }
   if (g.scene === "cut" && g.sceneT < 8) {
     if (g.sceneT < 2.5) { R(b, 0, 0, W, H, "#000"); rain(b, 0.5); return; }
     const c = (g.sceneT - 2.5) * 18; city(b, cc, c * 0.15 + 40, c * 0.45 + 120, t, c); rain(b, 1);
@@ -2062,7 +2713,7 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
   }
   const cam = Math.round(g.cam);
   const seated = g.scene === "cut";
-  YO = g.loc === "district" && (g.scene === "play" || g.scene === "end") ? 44 : 0;
+  YO = (g.loc === "district" || g.loc === "pier") && (g.scene === "play" || g.scene === "end") ? 44 : 0;
   if (g.loc === "apt") {
     drawApt(b, cc, cam, seated);
     drawNpcs(b, cam);
@@ -2076,12 +2727,15 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     b.drawImage(cc.dist, cam, 0, W, H, 0, 0, W, H);
     if (g.gfx) { const hz = b.createLinearGradient(0, YO, 0, FEET); hz.addColorStop(0, "rgba(70,170,145,0.4)"); hz.addColorStop(0.65, "rgba(50,140,120,0.12)"); hz.addColorStop(1, "rgba(40,110,100,0)"); b.fillStyle = hz; b.fillRect(0, YO, W, FEET - YO); }
     drawDistrictDyn(b, cam);
+    drawLife(b, cam, t, false);
     drawProps(b, cam);
     drawHauler(b, cam, t);
     drawPeds(b, cam, 0);
     drawNpcs(b, cam);
     drawDistrictFront(b, cam);
     drawPeds(b, cam, 1);
+    drawLife(b, cam, t, true);
+    vents(b, cam, [332, 846], t);
     drawFly(b, cam, t);
     for (let k = 0; k < 5; k++) { const x = ((k * 130 - cam * 0.8 + t * (4 + k)) % (W + 160) + W + 160) % (W + 160) - 80; glow(b, x, 120 + (k % 3) * 10, 70, "70,170,150", 0.14); }
     glow(b, g.px - cam, g.py - 12, 18, "255,190,120", 0.16);
@@ -2090,21 +2744,50 @@ function render(b: Ctx, rc: Ctx, buf: HTMLCanvasElement, rbuf: HTMLCanvasElement
     b.setTransform(SC, 0, 0, SC, 0, 0);
     waterPlane(b, rc, buf, rbuf, cam, t);
     rain(b, 1);
+  } else if (g.loc === "pier") {
+    b.setTransform(SC, 0, 0, SC, 0, -YO * SC);
+    city(b, cc, cam * 0.12, cam * 0.4, t, cam, true);
+    pierBack(b, cam, t);
+    b.drawImage(cc.pier, cam, 0, W, H, 0, 0, W, H);
+    drawPierDyn(b, cam);
+    drawLife(b, cam, t, false);
+    drawPeds(b, cam, 0);
+    drawNpcs(b, cam);
+    drawPierFront(b, cam);
+    drawPeds(b, cam, 1);
+    drawLife(b, cam, t, true);
+    drawFly(b, cam, t);
+    glow(b, g.px - cam, g.py - 12, 18, "255,190,120", 0.16);
+    drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
+    drawParts(b, cam);
+    b.setTransform(SC, 0, 0, SC, 0, 0);
+    waterPlane(b, rc, buf, rbuf, cam, t);
+    rain(b, 0.85);
+  } else if (g.loc === "lab") {
+    b.drawImage(cc.lab, cam, 0, W, H, 0, 0, W, H);
+    drawLabDyn(b, cam);
+    drawNpcs(b, cam);
+    glow(b, g.px - cam, g.py - 12, 18, "160,230,220", 0.14);
+    drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
+    reflect(b, rc, buf, rbuf, 0.22, [130, 330, 477], cam);
   } else {
     const bg = b.createLinearGradient(0, 0, 0, FEET); bg.addColorStop(0, "#050807"); bg.addColorStop(1, "#14302a");
     b.fillStyle = bg; b.fillRect(0, 0, W, H);
     b.drawImage(cc.mktB, Math.round(cam * 0.6), 0, W, H, 0, 0, W, H);
     b.drawImage(cc.mkt, cam, 0, W, H, 0, 0, W, H);
     drawMarketDyn(b, cam);
+    drawLife(b, cam, t, false);
     drawNpcs(b, cam);
     drawMarketFront(b, cam);
     drawPeds(b, cam, 0);
     drawPeds(b, cam, 1);
+    drawLife(b, cam, t, true);
+    vents(b, cam, [600], t);
     glow(b, g.px - cam, g.py - 12, 18, "255,190,120", 0.18);
     drawElias(b, g.px - cam, g.py, g.facing, eliasState(), g.walk, t);
     reflect(b, rc, buf, rbuf, 0.2, [210, 420, 660], cam);
   }
-  if (g.loc !== "district") drawParts(b, cam);
+  if (g.loc !== "district" && g.loc !== "pier") drawParts(b, cam);
   const vg = b.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, W * 0.65);
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,4,10,0.6)");
   b.fillStyle = vg; b.fillRect(0, 0, W, H);
@@ -2155,6 +2838,13 @@ const PORTS: Record<string, Port> = {
   PIX: { bg: "#102a2a", skin: "#d0a890", hair: "#7ac8ff", coat: "#2a4a4a", eye: "#202020", st: 3, ex: "glasses", hs: "bob", sh: "#ffd36b", rim: "#3df5d0" },
   OYELO: { bg: "#2a1028", skin: "#8a5a40", hair: "#101010", coat: "#6a2a5a", eye: "#f0e0c0", st: 5, ex: "beard", hs: "bald", sh: "#ffb04a", rim: "#ffb04a" },
   TAM: { bg: "#1a2a1a", skin: "#b88a70", hair: "#909090", coat: "#3a4a3a", eye: "#202020", st: 2, ex: "wrinkle", hs: "short", sh: "#a0a060", rim: "#ffb04a" },
+  SOL: { bg: "#1a1a14", skin: "#e0d4cc", hair: "#c8c0b0", coat: "#3a3428", eye: "#5ff0d8", st: 2, ex: "beard wrinkle", hs: "short", sh: "#5a4a3a", rim: "#5ff0d8" },
+  JUNO: { bg: "#2a1810", skin: "#a87458", hair: "#1a1010", coat: "#6a3a2a", eye: "#202020", st: 4, ex: "headband", hs: "bun", sh: "#c85a2a", rim: "#ffb04a" },
+  WREN: { bg: "#2a1a22", skin: "#e6dcd4", hair: "#2a1a20", coat: "#e8e4dc", eye: "#5ff0d8", st: 1, ex: "", hs: "bob", sh: "#dfe6e6", rim: "#ff6f9a" },
+  "DR. VALE": { bg: "#101a24", skin: "#d8b8a0", hair: "#a8a8a8", coat: "#dcdcd4", eye: "#3a4a5a", st: 2, ex: "glasses wrinkle", hs: "bun", sh: "#5a6a7a", rim: "#7ac8ff" },
+  KANE: { bg: "#101010", skin: "", hair: "", coat: "", eye: "", st: -1, ex: "", hs: "", sh: "", rim: "" },
+  KEYPAD: { bg: "#120606", skin: "", hair: "", coat: "", eye: "", st: -2, ex: "", hs: "", sh: "", rim: "" },
+  ARCHIVE: { bg: "#06100c", skin: "", hair: "", coat: "", eye: "", st: -2, ex: "", hs: "", sh: "", rim: "" },
   ROOK: { bg: "#1a1a2a", skin: "#a8a0b0", hair: "#8a6aaa", coat: "#2a2a3a", eye: "#7affc0", st: 0, ex: "headset", hs: "long", sh: "#3a3a50", rim: "#7affc0" },
 };
 function portrait(c: Ctx, x: number, y: number, s: number, who: string, t: number): void {
@@ -2216,7 +2906,7 @@ function portrait(c: Ctx, x: number, y: number, s: number, who: string, t: numbe
   if (has2("headset")) { Q(6, 8 + dy, 2, 4, "#7affc0"); Q(8, 12 + dy, 3, 1, "#7affc0"); }
   c.globalAlpha = 0.3; Q(15, 4 + dy, 2, 12, p.rim); c.globalAlpha = 0.18; Q(6, 4 + dy, 2, 12, "#5fd8d0"); c.globalAlpha = 1;
 }
-const SPK: Record<string, string> = { ELIAS: "#9fd8ff", NOVA: "#ff8fb5", "UNKNOWN CALLER": "#c8c8c8", INES: "#e8b0d8", DEX: "#ff9a4d", BRAM: "#9fc0ff", LULU: "#ffd36b", HIRO: "#ffb35c", PIX: "#7ae8ff", OYELO: "#ffcf7a", TAM: "#b8d0a0", ROOK: "#c8a8ff", TERMINAL: "#5dff9a" };
+const SPK: Record<string, string> = { ELIAS: "#9fd8ff", NOVA: "#ff8fb5", "UNKNOWN CALLER": "#c8c8c8", INES: "#e8b0d8", DEX: "#ff9a4d", BRAM: "#9fc0ff", LULU: "#ffd36b", HIRO: "#ffb35c", PIX: "#7ae8ff", OYELO: "#ffcf7a", TAM: "#b8d0a0", ROOK: "#c8a8ff", TERMINAL: "#5dff9a", SOL: "#cfe8d8", JUNO: "#ffb35c", WREN: "#ff9ac0", "DR. VALE": "#9fd0ff", KANE: "#d8d0c0", KEYPAD: "#ff7a6a", ARCHIVE: "#5dff9a" };
 function wrapText(c: Ctx, text: string, maxW: number): string[] {
   const out: string[] = []; let cur = "";
   for (const w of text.split(" ")) { const tt = cur ? cur + " " + w : w; if (c.measureText(tt).width > maxW && cur) { out.push(cur); cur = w; } else cur = tt; }
@@ -2281,6 +2971,13 @@ function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, in
     }
     if (!g.dlg && T < 11) { c.font = `${fsS}px ${mono}`; c.fillStyle = "rgba(220,240,235,0.7)"; c.textAlign = "right"; c.textBaseline = "bottom"; c.fillText("tap to skip", cw - 10 * dpr, ch - 10 * dpr); c.textAlign = "left"; }
     if (g.ringing && !g.dlg) tag(c, "☎ RING", toX(108), toY(104), fsS, "#ff8a8a", mono);
+  }
+  if (g.scene === "vis") {
+    const T = g.sceneT; const sub = visionText(T);
+    c.font = `${fsB}px ${mono}`; const ls = wrapText(c, sub, cw * 0.86); c.textAlign = "center"; c.textBaseline = "middle";
+    ls.forEach((ln: string, i: number) => { const y = ch * 0.8 + i * fsB * 1.4; c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(cw * 0.05, y - fsB * 0.75, cw * 0.9, fsB * 1.5); c.fillStyle = "#fff0d8"; c.fillText(ln, cw / 2, y); });
+    if (T > 2) { c.font = `${fsS}px ${mono}`; c.fillStyle = "rgba(220,240,235,0.7)"; c.textAlign = "right"; c.textBaseline = "bottom"; c.fillText("tap to continue", cw - 10 * dpr, ch - 10 * dpr); }
+    c.textAlign = "left";
   }
   if (g.scene === "glitch") {
     const T = g.sceneT; let sub = "";
@@ -2411,7 +3108,8 @@ function overlayHi(c: Ctx, cw: number, ch: number, dpr: number, mono: string, in
     c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(0, 0, cw, ch); c.textAlign = "center"; c.textBaseline = "middle";
     c.font = `bold ${Math.round(clamp(cssH * 0.08, 20, 40) * dpr)}px ${mono}`; c.shadowColor = "#ffb04a"; c.shadowBlur = 10 * dpr; c.fillStyle = "#fff0d8";
     c.fillText("TO BE CONTINUED", cw / 2, ch * 0.2); c.shadowBlur = 0;
-    c.font = `${fsS}px ${mono}`; c.fillStyle = "#9ff0d8"; c.fillText("MISSION 001 COMPLETE · MISSION 002 UNLOCKED", cw / 2, ch * 0.3);
+    c.font = `${fsS}px ${mono}`; c.fillStyle = "#9ff0d8"; c.fillText(g.flags.m2done ? "MISSION 002 COMPLETE · MISSION 003 UNLOCKED" : "MISSION 001 COMPLETE · MISSION 002 UNLOCKED", cw / 2, ch * 0.3);
+    if (g.flags.m2done) { c.fillStyle = "#ffd27a"; c.fillText("Next: A CITY WITHOUT SUNLIGHT", cw / 2, ch * 0.3 + fsS * 1.8); }
     c.textAlign = "left";
   }
   if (g.fade > 0) { c.globalAlpha = g.fade; c.fillStyle = "#000"; c.fillRect(0, 0, cw, ch); c.globalAlpha = 1; }
@@ -2497,7 +3195,7 @@ export default function AfterRain() {
       const k = e.key;
       if (k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown" || k === " " || k === "Tab") e.preventDefault();
       audioInit();
-      if (G.scene !== "play" && G.scene !== "cut") { if ((k === "e" || k === "E" || k === "Enter" || k === " ") && G.scene === "glitch") G.actQ = true; return; }
+      if (G.scene !== "play" && G.scene !== "cut") { if ((k === "e" || k === "E" || k === "Enter" || k === " ") && (G.scene === "glitch" || G.scene === "vis")) G.actQ = true; return; }
       if (k === "Escape") { G.panel = G.panel === "none" ? "pause" : "none"; G.rev++; return; }
       if (k === "Tab") { G.panel = G.panel === "bag" ? "none" : "bag"; G.rev++; return; }
       if (k === "j" || k === "J") { G.panel = G.panel === "journal" ? "none" : "journal"; G.rev++; return; }
@@ -2526,7 +3224,7 @@ export default function AfterRain() {
   }, []);
 
   const noCtx = (e: MouseEvent<HTMLElement>): void => { e.preventDefault(); };
-  const tapCanvas = (e: PointerEvent<HTMLCanvasElement>): void => { e.preventDefault(); audioInit(); if ((g.scene === "play" && g.dlg) || g.scene === "cut" || g.scene === "glitch") g.actQ = true; };
+  const tapCanvas = (e: PointerEvent<HTMLCanvasElement>): void => { e.preventDefault(); audioInit(); if ((g.scene === "play" && g.dlg) || g.scene === "cut" || g.scene === "glitch" || g.scene === "vis") g.actQ = true; };
   const noSel: CSSProperties = { userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none", touchAction: "none", WebkitTapHighlightColor: "transparent" };
   const big: CSSProperties = { ...noSel, minWidth: 72, height: 64, padding: "0 12px", borderRadius: theme.radius.lg, border: `1px solid ${theme.border.default}`, background: theme.bg.elevated, color: theme.text.primary, fontFamily: theme.font.mono, fontSize: 17, fontWeight: theme.weight.semibold, cursor: "pointer", opacity: ov ? 0.82 : 1 };
   const small: CSSProperties = { ...noSel, minHeight: 46, padding: "0 12px", borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, background: theme.bg.elevated, color: theme.text.primary, fontFamily: theme.font.mono, fontSize: 13, cursor: "pointer", opacity: ov ? 0.85 : 1 };
@@ -2599,6 +3297,8 @@ export default function AfterRain() {
     </div>
   ) : g.scene === "glitch" ? (
     <div style={{ display: "flex", justifyContent: "flex-end", width: "100%" }}><button style={big} onClick={() => { endGlitch(); bump(); }}>SKIP ▸▸</button></div>
+  ) : g.scene === "vis" ? (
+    <div style={{ display: "flex", justifyContent: "flex-end", width: "100%" }}><button style={big} onClick={() => { endVision(); bump(); }}>SKIP ▸▸</button></div>
   ) : g.scene === "end" ? (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
       <button style={{ ...big, ...active, flex: 1 }} onClick={() => { g.scene = "play"; blip(); bump(); }}>KEEP EXPLORING</button>
@@ -2628,6 +3328,7 @@ export default function AfterRain() {
       <div key={id} style={rowS}>
         <button style={{ ...wide, marginTop: 0, minHeight: 46 }} onClick={() => { g.openItem = open ? "" : id; blip(); bump(); }}>{(open ? "▾ " : "▸ ") + it.name + (it.ev ? "  ◆" : "")}</button>
         {open && <div style={{ ...sub, marginTop: 6 }}>{it.desc}</div>}
+        {open && id === "valelog" && <button style={{ ...wide, ...active }} onClick={() => { g.panel = "none"; say(valeLog(), null, true); bump(); }}>▶ PLAY MEMO</button>}
         {open && id === "tape" && <button style={{ ...wide, ...active }} onClick={() => { g.panel = "none"; playTape(); bump(); }}>▶ PLAY RECORDING</button>}
         {open && id === "photo" && <button style={wide} onClick={() => { g.panel = "none"; say([E("Mara on the pier. If she's alive, who have I been mourning for six years?")], null, true); bump(); }}>EXAMINE PHOTO</button>}
         {open && id === "chip" && g.obj === 4 && g.scene === "play" && <button style={{ ...wide, ...active }} onClick={() => { g.panel = "none"; startGlitch(); bump(); }}>INVESTIGATE CHIP</button>}
@@ -2642,7 +3343,7 @@ export default function AfterRain() {
         {g.panel === "pause" && (
           <>
             <div style={head}>Paused</div>
-            <div style={sub}>{g.obj < 5 ? "Objective: " + (OBJ[g.obj] ?? "") + ". " + objInfo().hint : "Mission 001 complete. Mission 002 unlocked."}</div>
+            <div style={sub}>{g.obj < OBJ.length ? (g.obj >= M1N ? "Mission 002 · " : "") + "Objective: " + (OBJ[g.obj] ?? "") + ". " + objInfo().hint : "Mission 002 complete. Mission 003: A City Without Sunlight is next."}</div>
             <button style={{ ...wide, ...active }} onClick={close}>▶ Resume</button>
             <button style={wide} onClick={() => { saveGame(); bump(); }}>Save</button>
             <button style={{ ...wide, ...(hasSave ? {} : dis) }} disabled={!hasSave} onClick={() => { loadGame(); g.panel = "none"; bump(); }}>Load</button>
@@ -2682,7 +3383,7 @@ export default function AfterRain() {
             <div style={head}>Credits</div>
             <div style={rowS}>AFTER RAIN · story, characters and opening dialogue by the creator.</div>
             <div style={rowS}><div style={sub}>Elias Voss, Nova, Mara, Detective Kane, Dr. Vale and AURELION are the creator's own. All pixel art, signs, music and sound are generated in code for this build.</div></div>
-            <div style={rowS}><div style={sub}>First playable section: Mission 001, Ghosts in the Rain.</div></div>
+            <div style={rowS}><div style={sub}>Playable: Mission 001, Ghosts in the Rain, and Mission 002, The Forgotten Ones.</div></div>
             <button style={{ ...wide, ...active, textAlign: "center" }} onClick={back}>Back</button>
           </>
         )}
@@ -2711,15 +3412,17 @@ export default function AfterRain() {
           <>
             <div style={head}>Journal</div>
             {MISSIONS.map((m: string, mi: number) => {
-              const unlocked = mi === 0 || (mi === 1 && g.m2);
+              const unlocked = mi === 0 || (mi === 1 && g.m2) || (mi === 2 && !!g.flags.m2done);
               return (
                 <div key={m} style={rowS}>
                   <div style={{ fontWeight: theme.weight.semibold, color: unlocked ? theme.text.primary : theme.text.tertiary }}>{(unlocked ? "MISSION " : "🔒 MISSION ") + m}</div>
-                  {mi === 0 && OBJ.map((o: string, oi: number) => (
-                    <div key={o} style={{ ...sub, color: oi === g.obj ? theme.text.primary : theme.text.secondary }}>{(oi < g.obj ? "✓ " : oi === g.obj ? "▸ " : "· ") + (oi + 1) + ". " + o}</div>
-                  ))}
-                  {mi === 0 && g.obj < 5 && <div style={{ ...sub, marginTop: 4, fontStyle: "italic" }}>Next: {objInfo().hint}</div>}
-                  {mi === 1 && g.m2 && <div style={sub}>Unlocked. Coming in the next chapter.</div>}
+                  {(mi === 0 || (mi === 1 && g.m2)) && OBJ.slice(mi === 0 ? 0 : M1N, mi === 0 ? M1N : OBJ.length).map((o: string, k: number) => { const oi = k + (mi === 0 ? 0 : M1N); return (
+                    <div key={o} style={{ ...sub, color: oi === g.obj ? theme.text.primary : theme.text.secondary }}>{(oi < g.obj ? "✓ " : oi === g.obj ? "▸ " : "· ") + (k + 1) + ". " + o}</div>
+                  ); })}
+                  {((mi === 0 && g.obj < M1N) || (mi === 1 && g.m2 && g.obj >= M1N && g.obj < OBJ.length)) && <div style={{ ...sub, marginTop: 4, fontStyle: "italic" }}>Next: {objInfo().hint}</div>}
+                  {mi === 1 && g.m2 && g.obj >= OBJ.length && <div style={sub}>Complete.</div>}
+                  {mi === 1 && g.m2 && <button style={wide} onClick={() => { blip(); startM2(); bump(); }}>{g.obj >= M1N ? "↺ REPLAY MISSION 002" : "▸ PLAY MISSION 002"}</button>}
+                  {mi === 2 && g.flags.m2done && <div style={sub}>Unlocked. Coming in the next chapter.</div>}
                   {!unlocked && <div style={sub}>Locked</div>}
                 </div>
               );
